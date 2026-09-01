@@ -229,3 +229,60 @@ def test_an_overlay_does_not_put_one_extractors_key_into_the_others_output(
     summary = next(t for t in from_word["topics"] if t["topic"] == "03")
     assert summary["sentence_rows"] == []
     assert "sentence_slides" not in summary
+
+
+# ---------------------------------------------------------------------------
+# The source is defaulted from the project type, not welded to it
+# ---------------------------------------------------------------------------
+
+def plant_course(course: Path, project_type: str, document: str, source: str = "") -> Path:
+    course.mkdir(parents=True, exist_ok=True)
+    (course / document).write_bytes(b"")
+    lines = [
+        'course_number: "02"',
+        f"project_type: {project_type}",
+        "course_code: it_gen01_02_enus",
+    ]
+    if source:
+        lines.append(f"script_source: {source}")
+    (course / "course.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return course
+
+
+def test_the_source_defaults_from_the_project_type(tmp_path):
+    from qa.config import load_course_yaml
+
+    vendor = plant_course(tmp_path / "v", "VENDOR", "deck.pptx")
+    assert load_course_yaml(vendor).script_source == PPTX
+
+    cgt = plant_course(tmp_path / "c", "CGT", "scripts.docx")
+    assert load_course_yaml(cgt).script_source == DOCX_BUS
+
+
+def test_an_unusual_course_may_state_a_source_its_type_does_not_imply(tmp_path):
+    """The default is a default. A CGT course with a deck is allowed to say so."""
+    from qa.config import load_course_yaml
+
+    course = plant_course(tmp_path / "odd", "CGT", "deck.pptx", source="pptx")
+    cfg = load_course_yaml(course)
+    assert cfg.script_source == PPTX
+    assert cfg.script_document.name == "deck.pptx"
+
+
+def test_a_per_topic_state_may_not_be_claimed_as_the_courses_source(tmp_path):
+    """A course whose every topic is unscripted is not a course this can read."""
+    from qa.config import load_course_yaml
+    from qa.util import ConfigError
+
+    course = plant_course(tmp_path / "bad", "VENDOR", "deck.pptx", source="none")
+    with pytest.raises(ConfigError, match="describes one topic, not a"):
+        load_course_yaml(course)
+
+
+def test_an_unknown_source_is_refused_by_name(tmp_path):
+    from qa.config import load_course_yaml
+    from qa.util import ConfigError
+
+    course = plant_course(tmp_path / "huh", "VENDOR", "deck.pptx", source="markdown")
+    with pytest.raises(ConfigError, match="is not recognized"):
+        load_course_yaml(course)
