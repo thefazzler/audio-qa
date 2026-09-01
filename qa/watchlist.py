@@ -6,8 +6,9 @@ examined explicitly, at every site, and routed to a human when anything looks
 off.
 
 The reason it exists: a mispronounced acronym does not arrive as silence. It
-arrives as a low confidence mishearing at exactly that term. Course 11 rendered
-SIEM as "SIM", "SIM" and "some" at p 0.474, 0.533 and 0.282. General alignment
+arrives as a low confidence mishearing at exactly that term. In Course 11 the
+ASR failed to write SIEM at three of its sites, at p 0.474, 0.533 and 0.282,
+producing two different wrong tokens instead. General alignment
 did surface those, incidentally, mixed in with 29 other differences. This layer
 finds them deliberately and exhaustively, and would still find them on a course
 whose alignment was otherwise silent.

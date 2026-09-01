@@ -227,8 +227,9 @@ two different courses is a hard stop rather than a guess.
 
 ## D15. Pronunciation watchlist, level 1: detect and route, never certify
 
-Course 11 produced the evidence for this. Its narration rendered SIEM as "SIM",
-"some" and "SIM" at p 0.474, 0.282 and 0.533. General alignment did surface all
+Course 11 produced the evidence for this. The ASR failed to write SIEM at
+three of its sites, at p 0.474, 0.282 and 0.533, producing two different wrong
+tokens rather than the term. General alignment did surface all
 three, but incidentally, mixed into 29 other differences, and it said nothing
 at all about the eleven sites where SIEM was heard correctly. Alignment reports
 differences; it cannot answer "was this term checked everywhere". That question

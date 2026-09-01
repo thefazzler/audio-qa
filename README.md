@@ -146,8 +146,9 @@ in the same folder need no configuration.
 ## Pronunciation watchlist
 
 A mispronounced acronym does not arrive as silence. It arrives as a low
-confidence mishearing at exactly that term: Course 11 rendered SIEM as "SIM",
-"some" and "SIM" at p 0.474, 0.282 and 0.533. General alignment surfaces those
+confidence mishearing at exactly that term: in Course 11 the ASR failed to
+write SIEM at three of its fourteen sites, at p 0.474, 0.282 and 0.533,
+producing two different wrong tokens. General alignment surfaces those
 incidentally, mixed in with everything else. The watchlist finds them
 deliberately, and checks every site of every listed term whether or not
 alignment had anything to say about it.

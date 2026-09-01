@@ -14,8 +14,8 @@
 # say is a note for people, never used for matching. TODO means nobody has
 # written it yet; the pipeline does not guess pronunciations.
 
-# Course 11 heard this as "SIM" (p 0.474), "some" (p 0.282) and "SIM" (p 0.533)
-# at three separate sites, in topics 01, 11 and 13.
+# Course 11 missed this at three separate sites, in topics 01, 11 and 13, at
+# p 0.474, 0.282 and 0.533.
 - term: "SIEM"
   expect: "SIEM"
   say: TODO

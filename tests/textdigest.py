@@ -15,10 +15,10 @@ approach, because the assertion then holds against whatever the storyboard
 actually says rather than against a copy of it frozen in a test file.
 
 Honest limitation: a digest of a short common token is not secrecy. Anyone can
-hash a wordlist and recover "some". The purpose here is that the repository
-does not quote course narration, not that the digests are irreversible. Long
-sentences are effectively opaque; single words are not, and no test should be
-written as though they were.
+hash a wordlist and recover a single word from its digest. The purpose here is
+that the repository does not quote course narration, not that the digests are
+irreversible. Long sentences are effectively opaque; single words are not, and
+no test should be written as though they were.
 """
 
 from __future__ import annotations

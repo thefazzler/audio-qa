@@ -140,12 +140,13 @@ SENTENCES = [
 
 # Site 1 heard correctly and confidently. Site 2 heard correctly but the
 # decoder was unsure. Site 3 heard as something else entirely, which is the
-# Course 11 signature.
+# shape the reference course produced. The wrong token here is invented, not
+# the one that course actually yielded. See D16.
 TRANSCRIPT = words(
     [
         ("A", 0.99), ("SIEM", 0.95), ("platform", 0.99), ("correlates", 0.98), ("events.", 0.99),
         ("The", 0.99), ("SIEM", 0.41), ("console", 0.98), ("shows", 0.99), ("alerts.", 0.99),
-        ("Analysts", 0.99), ("review", 0.99), ("the", 0.98), ("SIM", 0.47),
+        ("Analysts", 0.99), ("review", 0.99), ("the", 0.98), ("seam", 0.47),
         ("dashboard", 0.99), ("daily.", 0.99),
     ]
 )
@@ -166,7 +167,7 @@ def test_each_site_carries_its_evidence(siem):
 
     assert matched["heard"] == "SIEM" and matched["confidence"] == 0.95
     assert low["heard"] == "SIEM" and low["confidence"] == 0.41
-    assert misheard["heard"] == "SIM" and misheard["confidence"] == 0.47
+    assert misheard["heard"] == "seam" and misheard["confidence"] == 0.47
 
     for site in (matched, low, misheard):
         assert site["term"] == "SIEM"
@@ -201,7 +202,7 @@ def test_the_worst_site_is_the_misheard_one(siem):
     section = build_section(siem, Path("x/watchlist.yaml"), {"01": sites})
     worst = section["terms"][0]["worst"]
     assert worst["status"] == MISHEARD
-    assert worst["heard"] == "SIM"
+    assert worst["heard"] == "seam"
 
 
 def test_a_spelled_out_acronym_is_a_match_when_expect_allows_it():
@@ -253,7 +254,7 @@ def test_packet_watchlist_table_carries_the_disclaimer(siem):
     assert "never certifies pronunciation as correct or wrong" in text
     assert "| Term | Occurrences | Matched | Low confidence | Misheard |" in text
     assert "pronunciation candidate" in text
-    assert "SIM" in text
+    assert "seam" in text
 
 
 def test_packet_omits_the_section_for_checks_json_without_one():
