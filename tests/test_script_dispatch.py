@@ -203,3 +203,29 @@ def test_an_explicit_state_wins_over_the_legacy_key(deck, tmp_path):
     )
     demo = next(t for t in script["topics"] if t["topic"] == "03")
     assert demo["script"] == NONE
+
+
+def test_an_overlay_does_not_put_one_extractors_key_into_the_others_output(
+    deck, tmp_path
+):
+    """A storyboard's sentences come from slides; a Word script's from rows.
+
+    Clearing one must not create the other, or an entry ends up claiming a
+    provenance its extractor never had.
+    """
+    from test_bus_template import make_bus_document
+
+    states = {"03": TopicScript(state=NONE)}
+
+    from_deck = build_script_for_source(PPTX, deck, TOPICS, states, tmp_path)
+    demo = next(t for t in from_deck["topics"] if t["topic"] == "03")
+    assert demo["sentence_slides"] == []
+    assert "sentence_rows" not in demo
+
+    document = make_bus_document(tmp_path / "scripts.docx")
+    from_word = build_script_for_source(
+        DOCX_BUS, document, TOPICS, states, tmp_path, course_code="it_gen01_02_enus"
+    )
+    summary = next(t for t in from_word["topics"] if t["topic"] == "03")
+    assert summary["sentence_rows"] == []
+    assert "sentence_slides" not in summary

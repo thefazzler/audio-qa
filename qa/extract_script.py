@@ -421,8 +421,7 @@ def _apply_topic_overlays(
                 }
             )
             entry.pop("outline", None)
-            entry.pop("sentence_slides", None)
-            entry.pop("sentence_rows", None)
+            _clear_sentence_provenance(entry, drop=True)
         elif state.state == NONE:
             entry.update(
                 {
@@ -434,8 +433,24 @@ def _apply_topic_overlays(
                 }
             )
             entry.pop("outline", None)
-            entry["sentence_slides"] = []
-            entry["sentence_rows"] = []
+            _clear_sentence_provenance(entry, drop=False)
+
+
+def _clear_sentence_provenance(entry: dict, drop: bool) -> None:
+    """Empty the per-sentence back references, without inventing a key.
+
+    Each extractor names this differently, because a storyboard's sentences
+    come from slides and a Word script's come from table rows. Only the one
+    this entry actually has is touched: adding the other would put a key from
+    one extractor's shape into the other's output.
+    """
+    for key in ("sentence_slides", "sentence_rows"):
+        if key not in entry:
+            continue
+        if drop:
+            entry.pop(key)
+        else:
+            entry[key] = []
 
 
 def run_extract_script(course_dir: Path, force: bool = False) -> dict:
