@@ -14,7 +14,7 @@ the only evidence a judge has.
 
 from __future__ import annotations
 
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 from pathlib import Path
 
 from .util import QAError, read_json, write_json
@@ -634,8 +634,50 @@ def build_packet(
     return "\n".join(lines)
 
 
+# How a device is written in a packet's filename. "cuda" is the runtime's word
+# for it; "gpu" is everyone else's, and this name is read by people.
+DEVICE_NAMES = {"cuda": "gpu", "cpu": "cpu"}
+
+
+def packet_stem(manifest: dict, transcripts: dict, stamp: str, clock: str) -> str:
+    """Course, timestamp and device, so a packet names the run that made it.
+
+    The old name was course plus date, so a second run on the same day
+    overwrote the first silently. That is precisely the case where comparing
+    the two matters most: before a fix and after it, or CPU against GPU. See
+    D28.
+    """
+    settings = transcripts.get("settings") or {}
+    device = transcripts.get("device_used") or settings.get("device") or "cpu"
+    compute = settings.get("compute_type") or "unknown"
+    label = DEVICE_NAMES.get(device, device)
+    return f"{manifest['course_code']}_{stamp}_{clock}_{label}-{compute}"
+
+
+def _unclaimed(directory: Path, stem: str) -> str:
+    """A stem nothing has taken, so no packet is ever overwritten.
+
+    The timestamp usually settles it. This is for the case it does not: two
+    runs of the same course on the same device inside the same minute, which
+    happens when a re-run is scripted.
+    """
+    if not (directory / f"{stem}.md").exists():
+        return stem
+    for suffix in range(2, 100):
+        candidate = f"{stem}_{suffix}"
+        if not (directory / f"{candidate}.md").exists():
+            return candidate
+    raise PacketError(
+        f"Ninety-nine packets already exist for {stem} in {directory}. "
+        "Move some out of the way."
+    )
+
+
 def run_packet(
-    course_dir: Path, force: bool = False, run_date: str | None = None
+    course_dir: Path,
+    force: bool = False,
+    run_date: str | None = None,
+    output_dir: Path | str | None = None,
 ) -> dict:
     """Stage entry point. run_date is injectable so golden tests reproduce."""
     from .config import load_course_yaml
@@ -671,9 +713,14 @@ def run_packet(
         checks, manifest, transcripts, script, per_topic, artifacts_index, stamp
     )
 
-    cfg.qa_out.mkdir(parents=True, exist_ok=True)
-    name = f"reconciliation_packet_{manifest['course_code']}_{stamp}"
-    md_path = cfg.qa_out / f"{name}.md"
+    from .library import output_root
+
+    destination = output_root(output_dir, create=True)
+    name = _unclaimed(
+        destination,
+        packet_stem(manifest, transcripts, stamp, datetime.now().strftime("%H%M")),
+    )
+    md_path = destination / f"{name}.md"
     md_path.write_text(text + "\n", encoding="utf-8")
 
     payload = {
@@ -690,18 +737,21 @@ def run_packet(
             for topic, data in per_topic.items()
         },
     }
-    write_json(cfg.qa_out / f"{name}.json", payload)
+    write_json(destination / f"{name}.json", payload)
 
     words = len(text.split())
     result = {
         "path": str(md_path),
-        "json_path": str(cfg.qa_out / f"{name}.json"),
+        "json_path": str(destination / f"{name}.json"),
+        "output_dir": str(destination),
         "words": words,
         "estimated_pages": round(words / 500.0, 1),
         "lines": len(text.splitlines()),
     }
-    # Stable marker so the CLI can tell the stage has run; the packet itself
-    # carries the run date in its filename and must not be overwritten by a
-    # later run with a different date.
+    # Stable marker in the course folder so the CLI can tell the stage has run
+    # and anything downstream can find the packet without knowing where the
+    # output folder is. The packet itself lives in the output folder, is named
+    # for the run that made it, and is never overwritten.
+    cfg.qa_out.mkdir(parents=True, exist_ok=True)
     write_json(cfg.qa_out / "packet_index.json", result)
     return result

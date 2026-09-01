@@ -23,9 +23,9 @@ Courses live in a library outside this repository:
     $XDG_DATA_HOME/audio-qa/library           Linux
     ~/Library/Application Support/...         macOS
 
-Outside, deliberately. Storyboards and narration are customer material, and a
-library inside the repository would be one bad ignore rule away from being
-published. Override the location with the `AUDIO_QA_LIBRARY` environment
+Outside, deliberately. Script documents and narration are customer material,
+and a library inside the repository would be one bad ignore rule away from
+being published. Override the location with the `AUDIO_QA_LIBRARY` environment
 variable, or from the web interface, which remembers the choice.
 
 The courses under `tests/` are known-answer fixtures and stay where they are.
@@ -72,7 +72,11 @@ breaks after a Python or driver upgrade, it shows what changed.
   actionable message if it is missing. It never installs system software for
   you.
 - About 3 GB of disk for the ASR model, downloaded once on first run.
-- No GPU. Everything is CPU only by design.
+- **A GPU is optional.** Everything works on CPU, and the interface says so
+  rather than greying out a choice with no explanation. An NVIDIA card with the
+  CUDA runtime libraries decodes about 4x faster at float16. Device affects
+  decode precision; findings are re-verified rather than assumed identical. See
+  DECISIONS.md D23.
 
 ### Installing ffmpeg
 
@@ -120,7 +124,7 @@ Courses are grouped by learning path, one level above the course:
         watchlist.yaml          optional, shared by every course in the path
         course10/               zero padded, so course01 sorts before course10
           course.yaml           required
-          *.pptx                exactly one storyboard
+          *.pptx or *.docx      exactly one script document, see below
           audio/                the delivered media, mp3 or mp4 or a mix
 
 Both levels come straight out of the delivered filenames: in
@@ -132,8 +136,14 @@ A course folder on its own is all any stage needs:
 
     <course_dir>/
       course.yaml               required
-      *.pptx                    exactly one storyboard
+      *.pptx or *.docx          exactly one script document
       audio/                    the delivered media, mp3 or mp4 or a mix
+
+The script document depends on the project type and on nothing else. A VENDOR
+course's script is the speaker notes of a PowerPoint storyboard. A CGT course
+has no PowerPoint at all; its script is a Word document in the BUS Writing
+Template. Container format says nothing about either: topics normally arrive
+as mp4 and need demux on both project types. See DECISIONS.md D26.
 
 `course.yaml`:
 
@@ -142,7 +152,11 @@ A course folder on its own is all any stage needs:
     course_code: it_spisccc26_10_enus
 
     # optional
-    unscripted_topics: ["09"]     # demo files whose slides carry an outline
+    script_source: pptx           # or docx_bus; defaults from project_type
+    unscripted_topics: ["09"]     # topics whose script is an outline, not narration
+    topics:                       # per-topic states unscripted_topics cannot say
+      "09": {script: none}                          # no script at all
+      "12": {script: freeform, file: demo.docx}     # a script of its own
     slide_map:                    # only when the auto mapper cannot do it
       "01": [2, 3]
       "02": [4, 8]
@@ -150,11 +164,20 @@ A course folder on its own is all any stage needs:
       model: large-v3             # or medium, for faster iteration
       cpu_threads: 14
 
+Every topic is verbatim unless something here says otherwise. The four states
+are `verbatim`, `outline` (the storyboard describes the topic rather than
+scripting it), `freeform` (the narration is a separate document) and `none`
+(there is no script anywhere). A `none` topic is still transcribed, measured
+and reported; what it cannot have is word-level alignment.
+
 Audio files are named `<course_code>_<topic>.<ext>`. Topic ids are numeric and
 may be compound, so both `_01.mp3` and `_09_01.mp4` parse.
 
-The pipeline writes intermediates to `<course_dir>/qa_work/` and deliverables
-to `<course_dir>/qa_out/`.
+The pipeline writes intermediates to `<course_dir>/qa_work/`. Finished
+packets go somewhere else: an output folder, `Documents\audio-qa` by default and
+settable in the web interface or with `--output`. They are named by course,
+timestamp and device and are never overwritten, so that folder is the run
+history. See DECISIONS.md D28.
 
 ## Scaffolding a new course
 
@@ -181,19 +204,24 @@ cannot answer, and writes the skeleton:
 `--project-type VENDOR|CGT` answers the prompt up front for scripted use, and
 `--root` puts the learning path somewhere other than `tests/`.
 
-Copying the delivered media and the storyboard in stays a human step, and so
-does `unscripted_topics`: the scaffolder writes it empty with a reminder,
-because which topics are outline-only is a question only the storyboard
-answers. Nothing is asked about file formats. Ingest sniffs each delivered
-file and demuxes whatever is not already readable audio, so an mp3 and an mp4
-in the same folder need no configuration.
+Copying the delivered media and the script document in stays a human step, and
+so do the per-topic script states: the scaffolder writes `unscripted_topics`
+and `topics` empty with a reminder, because which topics are outline-only, or
+unscripted, or scripted in a document of their own, is a question only the
+script answers. `script_source` is filled in from `project_type`, since that is
+what decides it.
+
+Nothing is asked about file formats, and nothing is inferred from them. Ingest
+sniffs each delivered file and demuxes whatever is not already readable audio,
+so an mp3 and an mp4 in the same folder need no configuration, and neither one
+tells you anything about the project type or about whether a topic is a demo.
 
 ## Pronunciation watchlist
 
 A mispronounced acronym does not arrive as silence. It arrives as a low
 confidence mishearing at exactly that term: in Course 11 the ASR failed to
-write SIEM at three of its fourteen sites, at p 0.474, 0.282 and 0.533,
-producing two different wrong tokens. General alignment surfaces those
+write SIEM in three of its thirteen topics, at low confidence, producing more
+than one wrong token. General alignment surfaces those
 incidentally, mixed in with everything else. The watchlist finds them
 deliberately, and checks every site of every listed term whether or not
 alignment had anything to say about it.
@@ -266,7 +294,7 @@ first time and seconds thereafter.
 | align | `qa/align.py` | `discrepancies_<topic>.json`, `discrepancies.json` | Normalize both sides identically, align, report differences |
 | artifacts | `qa/artifacts.py` | `artifacts_<topic>.json`, `artifacts.json` | Signal only: silence, clipping, abrupt ends |
 | checks | `qa/checks.py` | `checks.json` | Coverage, pace, tail, mapping guard, one row per topic |
-| packet | `qa/packet.py` | `qa_out/reconciliation_packet_*.md` and `.json` | Assemble the evidence a judge needs |
+| packet | `qa/packet.py` | `<output>/<course>_<date>_<time>_<device>.md` and `.json` | Assemble the evidence a judge needs |
 | render | `qa/render.py` | phase 2 | Call the API and write the deliverable directly. Not implemented |
 
 Paths are relative to `<course_dir>/qa_work/` unless stated. Stages that write
@@ -278,7 +306,7 @@ Every intermediate is human-readable JSON. Every stage is rerunnable alone.
 ## Judgment step
 
 Open a Claude chat, paste `prompts/reconciliation_v2.md`, and attach the packet
-from `qa_out/`. The prompt carries the defect taxonomy, the verdict
+from the output folder. The prompt carries the defect taxonomy, the verdict
 definitions, the VENDOR edit-sheet format and the CGT remediation plan format.
 
 Two limits the prompt states and you should know before reading any report:
@@ -301,11 +329,17 @@ a workaround:
 
 - `qa/normalize.py`, `EQUIVALENCES`: notation conventions that should not read
   as differences, such as "life cycle" against "lifecycle" or an acronym
-  spelled out letter by letter.
+  spelled out letter by letter. **Add the term to the learning path's
+  `watchlist.yaml` at the same time.** Absorbing the difference is right when
+  it is orthography rather than speech, and it also means alignment will never
+  mention that term again; without the watchlist entry the pipeline has quietly
+  stopped looking at it. See DECISIONS.md D26.
 - `qa/extract_script.py`, `TOPIC_MARKERS`: the phrases a storyboard uses to
   open a topic. If a course opens topics differently the mapper halts with
   `PROBABLE MAPPING ERROR` and prints which phrase fired on which slide, so
-  you can see what to add.
+  you can see what to add. The BUS extractor has no equivalent: a Word script
+  is structured by tables rather than by wording, so it maps blocks to files by
+  document order and halts the same way if the counts disagree.
 - `qa/checks.py`: the thresholds, all named at the top of the file.
 
 Audio conventions need no configuration. The artifact stage measures what the
@@ -317,13 +351,30 @@ three seconds of silence around every file is not reported as having 20 defects.
     pytest
 
 The suite covers normalization, alignment against planted defects, artifact
-detection against synthetic signals, and Course 10 as a known-answer case.
-The Course 10 tests skip automatically when the pipeline outputs are absent,
-which they are on a fresh clone, because narration audio and storyboards are
-Skillsoft source material and are not in version control. To produce them,
-drop the course material into `tests/spisccc26/course10/` and run:
+detection against synthetic signals, the BUS Writing Template extractor against
+a document the tests generate, and Courses 10 and 11 as known-answer cases.
+
+The known-answer tests skip automatically when the pipeline outputs are absent,
+which they are on a fresh clone, because narration audio and script documents
+are Skillsoft source material and are not in version control. To produce them,
+drop the course material into `tests/spisccc26/course10/` and `course11/` and
+run:
 
     qa-run tests/spisccc26/course10 --date 2026-08-27
+    qa-run tests/spisccc26/course11 --date 2026-08-30
+
+The BUS extractor's golden assertions want a real CGT script in
+`tests/spcrisc26/course02/`, and skip without one. Its structural tests build a
+document from nothing and always run, so a fresh clone still exercises the
+rules: SCRIPT column only, scene headers stripped but kept, placeholders
+dropped, blocks matched to delivered files by order, a wrong `COURSE ID`
+halted.
+
+Nothing in the suite quotes narration. Where a test has to pin what the ASR
+heard, it pins a digest of it; see `tests/textdigest.py` and DECISIONS.md D16.
+And nothing pins a confidence, a word count or a coverage figure to three
+decimal places, because those move between CPU and GPU and a test that pins
+them breaks the first time someone runs it on other hardware. See D23 and D25.
 
 ## If you are taking this over
 

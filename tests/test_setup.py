@@ -432,7 +432,23 @@ def test_the_smoke_test_passes_end_to_end(tmp_path):
     """Installed and works are different claims. This is the second one."""
     passed, detail = smoke_test(tmp_path)
     assert passed, detail
-    assert "reconciliation_packet" in detail
+    assert "it_smoke_01_enus_2026-01-01" in detail
+    assert detail.endswith(".md")
+
+
+@pytest.mark.skipif(
+    not check_model("tiny").satisfied and not check_model("large-v3").satisfied,
+    reason="no ASR model cached; run qa-setup to fetch one",
+)
+def test_the_smoke_test_leaves_nothing_in_the_operators_output_folder(tmp_path):
+    """A machine check must not put a fixture packet in someone's Documents."""
+    from qa.library import output_root
+
+    before = set(output_root().glob("it_smoke_*")) if output_root().is_dir() else set()
+    smoke_test(tmp_path)
+    after = set(output_root().glob("it_smoke_*")) if output_root().is_dir() else set()
+    assert after == before
+    assert list((tmp_path / "output").glob("*.md"))
 
 
 def test_the_smoke_test_says_so_when_no_model_is_available(monkeypatch, tmp_path):

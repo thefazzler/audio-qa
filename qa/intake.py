@@ -446,9 +446,17 @@ def ingest_selection(
         )
 
     if resubmission and result.unchanged_topics:
+        # Deliberately conditional. This note compares file hashes and knows
+        # nothing about the ASR settings, and the transcript cache key includes
+        # the model and the compute type (D21). It once said "10 of 10
+        # unchanged" and the run then correctly re-decoded all ten, because the
+        # device had changed and with it the precision. The old wording was a
+        # promise this function is not in a position to make.
         result.warnings.append(
             f"{len(result.unchanged_topics)} of {len(selection.media)} files are "
-            "unchanged since the last run and will not be transcribed again."
+            "unchanged since the last run. Their transcripts will be reused if "
+            "the model and compute type match the last run too; a different "
+            "device or precision re-decodes them."
         )
     return result
 

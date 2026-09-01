@@ -17,6 +17,34 @@ from ..util import QAError
 
 APP = Path(__file__).with_name("app.py")
 
+# Everything Streamlit does on startup that is about Streamlit rather than
+# about this app. Passed as flags rather than written into a config file, so
+# launching qa-web changes nothing on the machine and a person who runs
+# streamlit by hand still gets its normal behaviour.
+#
+# Each of these was watched confusing somebody in the first pilot session:
+#
+#   showEmailPrompt      a first run pauses on "Email:" and waits. A new user
+#                        reads a paused prompt as a hang, and there is nothing
+#                        on screen to say otherwise.
+#   hideWelcomeMessage   also suppresses the "Help agents write better
+#                        Streamlit apps?" recommendation, which is advice to a
+#                        developer appearing in front of a content reviewer.
+#                        The URL it also hides is printed by this command
+#                        anyway, two lines earlier.
+#   toolbarMode minimal  hides the Deploy button and the developer menu. Deploy
+#                        invites pushing customer narration to Streamlit's
+#                        cloud, which is the one thing this tool exists to
+#                        avoid: everything runs on this machine and the audio
+#                        never leaves it.
+#   gatherUsageStats     off, for the same reason.
+STREAMLIT_QUIET = (
+    "--server.showEmailPrompt", "false",
+    "--logger.hideWelcomeMessage", "true",
+    "--client.toolbarMode", "minimal",
+    "--browser.gatherUsageStats", "false",
+)
+
 
 class WebError(QAError):
     pass
@@ -58,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.executable, "-m", "streamlit", "run", str(APP),
         "--server.port", str(args.port),
         "--server.headless", "true" if args.no_browser else "false",
-        "--browser.gatherUsageStats", "false",
+        *STREAMLIT_QUIET,
     ]
     try:
         return subprocess.call(command)

@@ -81,9 +81,17 @@ def _script(course_dir: Path, force: bool) -> dict:
 def _script_summary(script: dict) -> str:
     words = sum(t["word_count"] for t in script["topics"])
     source = script["mapping"]["source"]
+    # A storyboard has slides and a Word script has blocks. Say whichever this
+    # course actually has rather than printing "None slides" for half of them.
+    slides = script.get("slide_count")
+    extent = (
+        f"{slides} slides"
+        if slides
+        else f"{script['mapping'].get('blocks_found', len(script['topics']))} blocks"
+    )
     return (
         f"{len(script['topics'])} topics mapped ({source}), "
-        f"{words} script words, {script['slide_count']} slides"
+        f"{words} script words, {extent}"
     )
 
 
@@ -158,13 +166,15 @@ def _checks_summary(result: dict) -> str:
 def _packet(course_dir: Path, force: bool) -> dict:
     from .packet import run_packet
 
-    return run_packet(course_dir, force=force, run_date=_RUN_DATE)
+    return run_packet(
+        course_dir, force=force, run_date=_RUN_DATE, output_dir=_OUTPUT_DIR
+    )
 
 
 def _packet_summary(result: dict) -> str:
     return (
         f"{Path(result['path']).name}, {result['words']} words, "
-        f"about {result['estimated_pages']} pages"
+        f"about {result['estimated_pages']} pages, in {result['output_dir']}"
     )
 
 
@@ -183,6 +193,7 @@ STAGES: tuple[Stage, ...] = (
 _ASR_OVERRIDES: dict = {}
 _ONLY_TOPICS: list[str] | None = None
 _RUN_DATE: str | None = None
+_OUTPUT_DIR: str | None = None
 
 STAGE_NAMES = tuple(s.name for s in STAGES)
 
@@ -293,9 +304,19 @@ def main(argv: list[str] | None = None) -> int:
         metavar="ID",
         help="restrict per topic work to this topic; repeatable",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        metavar="DIR",
+        help=(
+            "where to write the finished packet (default: the configured "
+            "output folder, Documents/audio-qa). Working files always stay in "
+            "the course folder."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    global _ASR_OVERRIDES, _ONLY_TOPICS, _RUN_DATE
+    global _ASR_OVERRIDES, _ONLY_TOPICS, _RUN_DATE, _OUTPUT_DIR
     _ASR_OVERRIDES = {
         "model": args.model,
         "cpu_threads": args.threads,
@@ -303,6 +324,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     _ONLY_TOPICS = args.topic
     _RUN_DATE = args.date
+    _OUTPUT_DIR = str(args.output) if args.output else None
 
     course_dir = args.course_dir.resolve()
     print(f"audio-qa: {course_dir}", flush=True)

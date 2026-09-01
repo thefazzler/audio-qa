@@ -654,12 +654,16 @@ def smoke_test(workdir: Path | None = None, model: str = "") -> tuple[bool, str]
         cli_module._ASR_OVERRIDES = {"model": model, "cpu_threads": None}
         cli_module._ONLY_TOPICS = None
         cli_module._RUN_DATE = "2026-01-01"
+        # Into the throwaway workdir, never the operator's output folder. A
+        # check that proves the machine works must not leave a fixture packet
+        # sitting in Documents for someone to find later and wonder about.
+        cli_module._OUTPUT_DIR = str(root / "output")
 
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured):
             cli_module.run(course, None, False)
 
-        packets = list((course / "qa_out").glob("reconciliation_packet_*.md"))
+        packets = sorted((root / "output").glob("*.md"))
         if not packets:
             return False, "the pipeline ran but produced no packet"
         return True, (

@@ -38,16 +38,22 @@ measurement.
 
 1. **Material arrives on SharePoint** and is downloaded by hand to wherever the
    browser puts it, usually Downloads. It is never a synced folder, so there is
-   no automatic pickup and nothing watches a directory. A course is a
-   storyboard `.pptx` plus one narration file per topic, mp3 or mp4 or a mix.
+   no automatic pickup and nothing watches a directory. A course is one script
+   document plus one narration file per topic. Which document depends on the
+   project type and on nothing else: a VENDOR course's script is the speaker
+   notes of a PowerPoint storyboard, a CGT course's is a Word document in the
+   BUS Writing Template, and a CGT course has no PowerPoint at all. The
+   narration files are mp3 or mp4 or a mix, on both project types, and the
+   container says nothing about anything. See **D26**.
 2. **Intake** takes those files, derives the course from their names, copies
    them into the library and verifies every copy by hash. Either the web
    interface or `qa-new-course` plus a manual copy.
 3. **The run** transcribes, aligns against the script, measures the audio and
    builds a packet. Tens of minutes the first time, seconds afterwards.
 4. **Judgment** is manual and stays manual. Open a Claude chat, paste
-   `prompts/reconciliation_v2.md`, attach the packet from `qa_out/`. It returns
-   a findings report with verdicts, a listen list and remediation routing.
+   `prompts/reconciliation_v2.md`, attach the packet from the output folder,
+   `Documents\audio-qa` by default. It returns a findings report with
+   verdicts, a listen list and remediation routing.
 5. **The listen list** is worked through by a person with headphones. Nothing
    in the pipeline can settle these; that is the point of them.
 6. **Remediation.** For VENDOR courses the judgment step emits an edit sheet
@@ -88,30 +94,49 @@ requirement.
 `qa-run` is the command line. `qa-web` is a local Streamlit interface for
 people who would rather not open a terminal. They call the same functions.
 
-    qa/            the pipeline: eight stages, each rerunnable alone
-    qa/intake.py   derive, verify, copy, write course.yaml
-    qa/jobs.py     detached runs and progress
-    qa/results.py  composing a finished run for reading
-    qa/library.py  where courses live
-    qa/web/        Streamlit pages, no pipeline logic
+    qa/                    the pipeline: eight stages, each rerunnable alone
+    qa/intake.py           derive, verify, copy, write course.yaml
+    qa/script_source.py    the vocabulary: source per course, state per topic
+    qa/extract_script.py   the pptx extractor, and the dispatcher over them all
+    qa/extract_docx.py     the BUS Writing Template and freeform extractors
+    qa/transcript_checks.py  the two checks that need no script
+    qa/jobs.py             detached runs and progress
+    qa/results.py          composing a finished run for reading
+    qa/library.py          where courses live, and where packets go
+    qa/web/                Streamlit pages, no pipeline logic
 
 The test of the layering: moving this to a server should change only `qa/web/`.
 If you find yourself writing "run a course" logic in the web layer, stop.
 
 Courses live in a library **outside this repository**, at
-`%LOCALAPPDATA%\audio-qa\library` by default. That is deliberate: storyboards
-and narration are customer material, and a library inside the tree would be one
-bad ignore rule away from a public GitHub repo. Do not move courses into
-`tests/`.
+`%LOCALAPPDATA%\audio-qa\library` by default. That is deliberate: script
+documents and narration are customer material, and a library inside the tree
+would be one bad ignore rule away from a public GitHub repo. Do not move
+courses into `tests/`.
+
+The one exception is `tests/spisccc26/` and `tests/spcrisc26/`, which hold the
+known-answer courses. Their media, storyboards and Word scripts are gitignored
+and are not in version control; only the `course.yaml` files and the watchlist
+are. Those folders are test material, deliberately kept apart from the working
+library, and a course you are actually reviewing does not belong in them. See
+D13 and D16.
+
+Finished packets do **not** live with the courses. They go to an output folder,
+`Documents\audio-qa` by default and settable in the sidebar, named by course,
+timestamp and device, and are never overwritten, so that folder is the run
+history: before-fix and after-fix packets, or a CPU packet and a GPU packet of
+one course, sit side by side. See **D28**.
 
 ## What will bite you
 
 **The known-answer tests skip on a fresh clone.** Courses 10 and 11 under
-`tests/spisccc26/` have their audio and storyboards gitignored, so 25 or so
-tests skip silently and you may never know they exist. To run them you need the
-course material from SharePoint, dropped into `tests/spisccc26/course10/` and
-`course11/`, then `qa-run` on each. Those tests are the real proof the pipeline
-works; the rest are unit tests.
+`tests/spisccc26/`, and the CGT script under `tests/spcrisc26/course02/`, have
+their audio, storyboards and Word scripts gitignored, so thirty or so tests
+skip silently and you may never know they exist. To run them you need the
+material from SharePoint, dropped into those folders, then `qa-run` on each
+course. Those tests are the real proof the pipeline works; the rest are unit
+tests. The BUS extractor also has a full set of structural tests that build a
+document from nothing and always run, so a fresh clone is not defenceless.
 
 **Thresholds are measured, not chosen.** Three separate times a plausible
 absolute threshold turned out to flag a course's house style rather than its
@@ -132,7 +157,8 @@ know, it stops and tells you which phrase fired on which slide. Add to
 
 **Only one run per course at a time.** Two runs on one course folder overwrite
 each other's intermediates and each keeps invalidating the other. The web layer
-refuses this; the CLI does not stop you.
+refuses this; the CLI does not stop you. Packets are the exception and are
+never overwritten by anything, which is the point of D28.
 
 **A no-op edit is not an error.** Several bulk edits during the build silently
 did nothing because a string replace whose pattern does not match changes
@@ -143,7 +169,11 @@ nothing and reports success. Assert before writing.
 Three places absorb house style, and adding to them is normal work:
 
 - `qa/normalize.py`, `EQUIVALENCES`: notation that should not read as a
-  difference, such as "life cycle" against "lifecycle".
+  difference, such as "life cycle" against "lifecycle". **Adding a row here
+  means adding the term to the learning path's watchlist too.** Absorbing a
+  difference is correct when it is orthography rather than speech, and it also
+  means alignment will never mention that term again; without the watchlist
+  entry the pipeline has quietly stopped looking at it. See D26.
 - `qa/extract_script.py`, `TOPIC_MARKERS`: the phrases a storyboard uses to
   open a topic.
 - `qa/checks.py`: the thresholds, all named at the top of the file.
@@ -169,29 +199,36 @@ built because the packet format should settle across more courses first.
   pipeline says it does not, at above 0.99 confidence, and the golden test
   encodes that answer. It is marked pending confirmation by ear. Ten seconds of
   audio settles it.
-- **Course 11's three SIEM sites**, at ASR confidences 0.474, 0.282 and 0.533.
-  Whether the term was voiced wrong or the decode merely struggled is something
-  only listening can answer. The layer is designed so that a false alarm routed
-  to a human is acceptable and a miss is not.
+- **Course 11's SIEM sites, in topics 01, 11 and 13.** Whether the term was
+  voiced wrong or the decode merely struggled is something only listening can
+  answer. The layer is designed so that a false alarm routed to a human is
+  acceptable and a miss is not. The number of sites and their confidences
+  depend on which device decoded: three on CPU, four on GPU. Which topics carry
+  the problem does not, and that is what the golden test asserts.
 
 Neither blocks anything. Both stay open forever if nobody knows they were
 waiting on a person rather than on code, which is why they are here.
 
-**Two CUDA states have never been seen on real hardware.** D24 tracks all four
-and which are live. `VERSION MISMATCH` needs the owner's desktop with its stale
-CUDA 11.0 toolkit: run `qa-setup --check` there, follow the check's own
-remediation, confirm it goes green. `NO GPU` needs any CPU-only machine, and it
-is the state most contributors will be in, so it is the most valuable one left
-to confirm: `qa-setup --check` plus one short run, with the selector showing
-GPU greyed out and the run finishing on CPU without anyone doing anything.
+**One CUDA state has never been seen on real hardware, and one was simulated.**
+D24 tracks all four. `VERSION MISMATCH` needs the owner's desktop with its
+stale CUDA 11.0 toolkit: run `qa-setup --check` there, follow the check's own
+remediation, confirm it goes green. `NO GPU` was confirmed on 2026-09-01 by
+running a full course with `CUDA_VISIBLE_DEVICES=-1`, which proves the probe,
+the selector, the fallback and the packet's account of itself; it does not
+prove a machine that has never had CUDA installed, where the failure can be an
+import error rather than a device count of zero. A bare CPU-only laptop is
+still the real test and is scheduled for the colleague pilot.
 
-**The GPU path is wired and enabled.** The device probe is real and the
-selector works; transcription still runs CPU only. Enabling it is a change in
-Choosing GPU decodes on GPU, about 4x faster here, and a GPU that fails under
-load falls back to CPU and says so everywhere. Before you touch the cache key,
-read **D21** and its correction: device is excluded from it, and the reason is
-now a cost decision rather than the identity claim it started as, because
-**D23** measured the two devices and they do not agree exactly.
+**The GPU path is wired and enabled.** The probe is real, the selector works,
+and choosing GPU decodes on GPU: about 4x faster here, at float16. A GPU that
+fails under load falls back to CPU, finishes the course, and says so in the job
+record, the stats panel and the packet header. Before you touch the transcript
+cache key, read **D21** and its correction: device is excluded from it and
+compute type is included, and the reason device is excluded is now a cost
+decision rather than the identity claim it started as, because **D23** measured
+the two devices and they do not agree exactly. **D25** is what that
+disagreement does to conclusions, which is almost nothing, and the addendum to
+D23 is the counterexample that keeps "almost" in that sentence.
 
 ## Who to ask
 

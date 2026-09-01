@@ -348,6 +348,7 @@ def ingest(tmp_path, topics=("01", "02"), video=(), unscripted=(), **kwargs):
         unscripted_topics=unscripted,
         reviewed_by=kwargs.pop("reviewed_by", "Ryan"),
         notes=kwargs.pop("notes", ""),
+        topic_scripts=kwargs.pop("topic_scripts", {}),
     )
     return selection, ingest_selection(selection, form, library=tmp_path / "library")
 
@@ -634,3 +635,142 @@ def test_changing_the_audio_or_the_precision_makes_it_stale(tmp_path):
     assert not transcript_is_current(
         prior, "abc123", cpu.fingerprint(), tmp_path / "absent.json"
     )
+
+
+# ---------------------------------------------------------------------------
+# Script sources at intake
+# ---------------------------------------------------------------------------
+
+def test_every_topic_is_verbatim_unless_something_says_otherwise(tmp_path):
+    """The default, asserted rather than assumed.
+
+    A pilot run showed the outline-only field with every topic selected, and
+    nobody could say afterwards whether that was the default or a stray click.
+    Now there is a test, so the question cannot be open again.
+    """
+    from qa.config import load_course_yaml
+    from qa.script_source import VERBATIM
+
+    _, result = ingest(tmp_path, topics=("01", "02", "09"))
+    cfg = load_course_yaml(result.course_dir)
+    assert cfg.unscripted_topics == ()
+    assert cfg.topic_scripts == {}
+    assert all(cfg.script_for(t).state == VERBATIM for t in ("01", "02", "09"))
+
+
+def test_a_vendor_course_takes_its_script_from_the_storyboard(tmp_path):
+    from qa.script_source import PPTX
+
+    selection = read_selection(delivery(tmp_path))
+    assert selection.script_document("VENDOR") == selection.storyboard
+    assert selection.script_document("VENDOR").suffix == ".pptx"
+
+    from qa.config import load_course_yaml
+
+    _, result = ingest(tmp_path)
+    assert load_course_yaml(result.course_dir).script_source == PPTX
+
+
+def test_a_cgt_course_with_no_word_script_is_refused_rather_than_guessed(tmp_path):
+    """Reading the pptx instead would align the course against the wrong text."""
+    selection = read_selection(delivery(tmp_path))
+    form = IntakeForm(project_type="CGT", reviewed_by="Ryan")
+    with pytest.raises(IntakeError, match="script is a .docx"):
+        form.validate(selection)
+
+
+def test_a_cgt_course_finds_its_bus_document_among_the_selection(tmp_path):
+    from qa.script_source import DOCX_BUS
+    from qa.config import load_course_yaml
+
+    files = delivery(tmp_path)
+    script = tmp_path / "Downloads" / "it_spisccc26_11_scripts_v1.docx"
+    script.write_bytes(b"not really a docx, but intake never opens it")
+    selection = read_selection(files + [script])
+
+    assert selection.script_document("CGT") == script
+    assert selection.documents == (script,)
+
+    form = IntakeForm(project_type="CGT", reviewed_by="Ryan")
+    result = ingest_selection(selection, form, library=tmp_path / "library")
+    assert (result.course_dir / script.name).exists()
+    # The storyboard came along too, and does not become the script.
+    cfg_path = result.course_dir / "course.yaml"
+    assert "script_source: docx_bus" in cfg_path.read_text(encoding="utf-8")
+    assert load_course_yaml(result.course_dir).script_document.name == script.name
+
+
+def test_a_freeform_topic_names_its_own_document_and_it_is_copied(tmp_path):
+    from qa.config import load_course_yaml
+    from qa.script_source import FREEFORM
+
+    files = delivery(tmp_path, topics=("01", "09"))
+    demo = tmp_path / "Downloads" / "demo_script.txt"
+    demo.write_text("The kettle boils.", encoding="utf-8")
+    selection = read_selection(files + [demo])
+
+    form = IntakeForm(
+        project_type="VENDOR",
+        reviewed_by="Ryan",
+        topic_scripts={"09": (FREEFORM, "demo_script.txt")},
+    )
+    result = ingest_selection(selection, form, library=tmp_path / "library")
+
+    assert (result.course_dir / "demo_script.txt").exists()
+    cfg = load_course_yaml(result.course_dir)
+    assert cfg.script_for("09").state == FREEFORM
+    assert cfg.script_for("09").file == "demo_script.txt"
+    assert cfg.script_for("01").state == "verbatim"
+
+
+def test_a_freeform_topic_with_no_document_chosen_is_refused(tmp_path):
+    from qa.script_source import FREEFORM
+
+    selection = read_selection(delivery(tmp_path, topics=("01", "09")))
+    form = IntakeForm(
+        project_type="VENDOR", reviewed_by="Ryan", topic_scripts={"09": (FREEFORM, "")}
+    )
+    with pytest.raises(IntakeError, match="no script document was chosen"):
+        form.validate(selection)
+
+
+def test_a_topic_with_no_script_is_recorded_as_such(tmp_path):
+    from qa.config import load_course_yaml
+    from qa.script_source import NONE
+
+    _, result = ingest(tmp_path, topics=("01", "09"), topic_scripts={"09": (NONE, "")})
+    cfg = load_course_yaml(result.course_dir)
+    assert cfg.script_for("09").state == NONE
+    assert cfg.script_for("09").aligned is False
+
+
+def test_a_script_state_for_a_topic_that_was_not_delivered_is_refused(tmp_path):
+    from qa.script_source import NONE
+
+    selection = read_selection(delivery(tmp_path, topics=("01",)))
+    form = IntakeForm(
+        project_type="VENDOR", reviewed_by="Ryan", topic_scripts={"99": (NONE, "")}
+    )
+    with pytest.raises(IntakeError, match="topic 99, which was not delivered"):
+        form.validate(selection)
+
+
+def test_the_reuse_note_does_not_promise_what_it_cannot_know(tmp_path):
+    """It compares file hashes and knows nothing about the ASR settings.
+
+    It once said "10 of 10 unchanged" and the run then correctly re-decoded all
+    ten, because the device had changed and with it the precision. See D21.
+    """
+    selection, first = ingest(tmp_path)
+    write_manifest(
+        first.course_dir, {m.topic: sha256_file(m.path) for m in selection.media}
+    )
+    again = ingest_selection(
+        selection,
+        IntakeForm(project_type="VENDOR", reviewed_by="Ryan"),
+        library=tmp_path / "library",
+    )
+    note = " ".join(again.warnings)
+    assert "unchanged since the last run" in note
+    assert "will not be transcribed again" not in note
+    assert "model and compute type" in note

@@ -330,8 +330,21 @@ def build_stats(work: Path, checks: dict) -> Stats:
 
 
 def find_packet(course_dir: Path) -> tuple[Path | None, Path | None]:
-    """The most recent packet, and its JSON twin."""
+    """The most recent packet, and its JSON twin.
+
+    The packet stage records where it wrote, so that is the first place to
+    look: the output folder is configurable and a course does not know where
+    it is. Falls back to the old location, so a course last run before packets
+    moved still shows its packet rather than claiming there is none.
+    """
     out = Path(course_dir) / "qa_out"
+    index = _load(out, "packet_index.json") or {}
+    recorded = index.get("path")
+    if recorded and Path(recorded).exists():
+        markdown = Path(recorded)
+        payload = Path(index.get("json_path") or markdown.with_suffix(".json"))
+        return markdown, (payload if payload.exists() else None)
+
     if not out.is_dir():
         return None, None
     packets = sorted(out.glob("reconciliation_packet_*.md"))
@@ -340,6 +353,21 @@ def find_packet(course_dir: Path) -> tuple[Path | None, Path | None]:
     markdown = packets[-1]
     payload = markdown.with_suffix(".json")
     return markdown, (payload if payload.exists() else None)
+
+
+def packet_history(course_code: str, output_dir: Path | None = None) -> list[Path]:
+    """Every packet this course has produced, newest first.
+
+    The output folder is the run history: packets are named for the run that
+    made them and never overwritten, so a before-fix and an after-fix packet,
+    or a CPU and a GPU packet of the same course, sit side by side. See D28.
+    """
+    from .library import output_root
+
+    root = Path(output_dir) if output_dir else output_root()
+    if not course_code or not root.is_dir():
+        return []
+    return sorted(root.glob(f"{course_code}_*.md"), reverse=True)
 
 
 def load_results(course_dir: Path) -> CourseResults:

@@ -189,7 +189,7 @@ def _packet_and_judgment(results) -> None:
     )
 
     text = results.packet_md.read_text(encoding="utf-8")
-    columns = st.columns(2)
+    columns = st.columns(3)
     columns[0].download_button(
         "Download the packet",
         data=text,
@@ -204,10 +204,45 @@ def _packet_and_judgment(results) -> None:
             file_name=results.packet_json.name,
             mime="application/json",
         )
+
+    # The full path, because "download" is not what most people want here:
+    # the packet is already on this machine and the next step is to drag it
+    # into a chat window.
+    from qa.web import reveal
+
+    if reveal.available() and columns[2].button("Open the folder"):
+        error = reveal.open_folder(results.packet_md)
+        if error:
+            st.warning(error)
+    st.code(str(results.packet_md), language=None)
     st.caption(f"{len(text.split())} words, about {len(text.split()) / 500:.1f} pages")
+
+    _packet_history(results)
 
     with st.expander("Preview the packet"):
         st.markdown(text)
+
+
+def _packet_history(results) -> None:
+    """Every packet this course has produced, because none are overwritten.
+
+    A before-fix packet and an after-fix packet, or a CPU packet and a GPU
+    packet of the same course, sit side by side. That is the point of the
+    naming; showing the list is what makes it usable. See D28.
+    """
+    from qa.results import packet_history
+
+    history = packet_history(results.course_code)
+    if len(history) <= 1:
+        return
+    with st.expander(f"Earlier packets for this course ({len(history) - 1})"):
+        st.caption(
+            "Packets are named by course, time and device and are never "
+            "overwritten, so this folder is the run history."
+        )
+        for path in history:
+            marker = " (current)" if path == results.packet_md else ""
+            st.write(f"`{path.name}`{marker}")
 
 
 def _stats(results) -> None:

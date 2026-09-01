@@ -101,6 +101,8 @@ class JobStatus:
     rate_realtime: float | None = None
     device_requested: str = ""
     device_used: str = ""
+    compute_type: str = ""
+    reviewed_by: str = ""
     fallback_reason: str = ""
     eta_s: float | None = None
     eta_basis: str = ""
@@ -335,6 +337,7 @@ class ProgressWatcher:
             data.get("requested_device") or settings.get("requested_device") or ""
         )
         self.status.device_used = data.get("device_used") or settings.get("device", "")
+        self.status.compute_type = settings.get("compute_type", "")
         reason = data.get("fallback_reason") or ""
         if reason and reason != self.status.fallback_reason:
             self.status.fallback_reason = reason
@@ -500,6 +503,7 @@ def run_job(job_id: str, store: JobStore | None = None) -> int:
     }
     cli_module._ONLY_TOPICS = options.get("topics")
     cli_module._RUN_DATE = options.get("date")
+    cli_module._OUTPUT_DIR = options.get("output")
 
     watcher.start()
     try:
@@ -522,6 +526,27 @@ def run_job(job_id: str, store: JobStore | None = None) -> int:
         store.write(status)
 
     return 0 if status.state == DONE else 1
+
+
+def _reviewer(course_dir: Path) -> str:
+    """Who took this course in, from course.yaml, for the run listing.
+
+    Read here rather than passed in, because intake already recorded it and a
+    second copy typed at run time would be a second answer to one question.
+    Absence is normal on a course scaffolded from the command line.
+    """
+    import yaml
+
+    path = Path(course_dir) / "course.yaml"
+    if not path.exists():
+        return ""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("reviewed_by") or "").strip()
 
 
 def submit(
@@ -558,6 +583,7 @@ def submit(
         course_dir=str(course_dir),
         state=PENDING,
         options=dict(options or {}),
+        reviewed_by=_reviewer(course_dir),
         started_at=time.time(),
     )
     store.write(status)

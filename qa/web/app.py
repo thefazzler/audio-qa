@@ -28,9 +28,12 @@ from qa.intake import (
 )
 from qa.library import (
     ENV_VAR,
+    OUTPUT_ENV_VAR,
     list_courses,
     resolve_library,
+    resolve_output,
     set_library,
+    set_output,
 )
 from qa.script_source import (
     DOCX_BUS,
@@ -52,6 +55,7 @@ def _init_state() -> None:
     st.session_state.setdefault("result", None)
     st.session_state.setdefault("removed", None)
     st.session_state.setdefault("watching", None)
+    st.session_state.setdefault("started_here", None)
 
 
 @st.cache_data(show_spinner=False)
@@ -64,17 +68,32 @@ def _devices():
 # Sidebar: where things live, and what this machine can do
 # ---------------------------------------------------------------------------
 
+SOURCE_NOTE = {
+    "argument": "set for this run",
+    "environment": "set by {var}",
+    "settings": "saved setting",
+    "default": "default location for this machine",
+}
+
+
+def _open_button(path: Path, key: str) -> None:
+    """A button that shows a folder in the machine's own file browser."""
+    from qa.web import reveal
+
+    if not reveal.available():
+        return
+    if st.sidebar.button("Open folder", key=key):
+        error = reveal.open_folder(path)
+        if error:
+            st.sidebar.warning(error)
+
+
 def _sidebar() -> None:
     st.sidebar.header("Library")
     resolution = resolve_library()
     st.sidebar.write(f"`{resolution.path}`")
-    explanation = {
-        "argument": "set for this run",
-        "environment": f"set by {ENV_VAR}",
-        "settings": "saved setting",
-        "default": "default location for this machine",
-    }[resolution.source]
-    st.sidebar.caption(explanation)
+    st.sidebar.caption(SOURCE_NOTE[resolution.source].format(var=ENV_VAR))
+    _open_button(resolution.path, "open-library")
 
     courses = list_courses(resolution.path)
     st.sidebar.caption(
@@ -91,6 +110,27 @@ def _sidebar() -> None:
             try:
                 saved = set_library(Path(typed))
                 st.success(f"Library set to {saved}")
+                st.rerun()
+            except OSError as exc:
+                st.error(f"Could not save that location: {exc}")
+
+    st.sidebar.header("Packets")
+    output = resolve_output()
+    st.sidebar.write(f"`{output.path}`")
+    st.sidebar.caption(SOURCE_NOTE[output.source].format(var=OUTPUT_ENV_VAR))
+    _open_button(output.path, "open-output")
+    st.sidebar.caption(
+        "Finished packets land here, named by course, time and device, and are "
+        "never overwritten, so this folder is the run history. Working files "
+        "stay in the library."
+    )
+
+    with st.sidebar.expander("Change packet folder"):
+        typed_out = st.text_input("Packet folder", value=str(output.path))
+        if st.button("Save packet folder"):
+            try:
+                saved = set_output(Path(typed_out))
+                st.success(f"Packets will be written to {saved}")
                 st.rerun()
             except OSError as exc:
                 st.error(f"Could not save that location: {exc}")
@@ -134,6 +174,7 @@ def _choose_files() -> None:
     if columns[1].button("Clear"):
         st.session_state.paths = []
         st.session_state.result = None
+        st.session_state.started_here = None
 
     if not picker.available():
         st.info(
@@ -384,7 +425,22 @@ def _show_result(result) -> None:
 
     st.subheader("Next")
     st.write("The course is in the library and ready to run.")
-    if st.button("Run it now", type="primary"):
+
+    started = st.session_state.get("started_here")
+    if started:
+        # Show the run this page just started, here, rather than telling
+        # someone to go and find it. Clicking "Run it now" and then landing on
+        # a form that looks idle invites a second click, which the
+        # one-run-per-course guard then has to catch.
+        from qa.web.run_view import live_panel
+
+        st.success(f"Run {started} is under way.")
+        live_panel(started)
+        st.caption(
+            "This run is a separate process. Closing this tab, or the app, "
+            "does not stop it. The Runs tab shows the same thing."
+        )
+    elif st.button("Run it now", type="primary"):
         from qa.jobs import submit
         from qa.device import default_device, effective_device
 
@@ -395,7 +451,8 @@ def _show_result(result) -> None:
             st.error(str(exc))
         else:
             st.session_state.watching = status.id
-            st.success(f"Run {status.id} started. Open the Runs tab to watch it.")
+            st.session_state.started_here = status.id
+            st.rerun()
     st.caption("Or from a terminal:")
     st.code(f"qa-run {result.course_dir}", language="bash")
 
@@ -428,11 +485,20 @@ def main() -> None:
 
     intake_tab, runs_tab, results_tab = st.tabs(["Intake", "Runs", "Results"])
     with runs_tab:
+        from qa.jobs import FileJobStore
         from qa.web.run_view import start_panel, watch_panel
 
-        start_panel()
-        st.divider()
-        watch_panel()
+        # Progress first when there is a run to watch. The start form used to
+        # be at the top, so clicking "Run it now" and switching to this tab
+        # landed on a form that looked idle, which invited a second click that
+        # the one-run-per-course guard then had to catch.
+        if FileJobStore().list():
+            watch_panel()
+            st.divider()
+            with st.expander("Run another course"):
+                start_panel()
+        else:
+            start_panel()
 
     with results_tab:
         from qa.web.results_view import results_panel
@@ -483,6 +549,7 @@ def _intake() -> None:
 
     st.session_state.result = result
     st.session_state.removed = None
+    st.session_state.started_here = None
     st.rerun()
 
 

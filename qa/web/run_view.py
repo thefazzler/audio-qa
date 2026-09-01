@@ -211,6 +211,63 @@ def _live(job_id: str) -> None:
         )
 
 
+def live_panel(job_id: str) -> None:
+    """One run's progress, for any page that wants to show it.
+
+    The intake page uses this so that starting a run lands on the run, rather
+    than on a form that looks idle.
+    """
+    try:
+        status = _store().read(job_id)
+    except JobError as exc:
+        st.error(str(exc))
+        return
+    if status.state == RUNNING:
+        _live(job_id)
+    else:
+        _draw(status)
+
+
+def run_label(job) -> str:
+    """A run, described so two runs of one course are told apart.
+
+    Course, when it started, what it ran on, how long it took and what it
+    found. The picker used to say course, status and run id, which is the same
+    label for every run of a course except for a hex string nobody can read.
+    """
+    import datetime
+
+    course = job.course_code or Path(job.course_dir).name
+    started = (
+        datetime.datetime.fromtimestamp(job.started_at).strftime("%Y-%m-%d %H:%M")
+        if job.started_at
+        else "not started"
+    )
+    device = job.device_used or job.device_requested or "device unknown"
+    if job.compute_type:
+        device = f"{device} {job.compute_type}"
+
+    parts = [course, started, device]
+    # Stale before running: a job whose process died still says RUNNING in its
+    # record, and calling that "running" is the one thing this label must not
+    # do, because it is what makes someone wait for a run that is not there.
+    if job.stale:
+        parts.append("abandoned")
+    elif job.state == RUNNING:
+        parts.append(f"running, {_clock(job.elapsed_s)} so far")
+    elif job.state == FAILED:
+        parts.append("failed")
+    else:
+        parts.append(_clock(job.elapsed_s))
+
+    if job.state == DONE:
+        found = sum(t.discrepancies or 0 for t in job.topics)
+        parts.append(f"{found} difference{'' if found == 1 else 's'}")
+    if job.reviewed_by:
+        parts.append(job.reviewed_by)
+    return " · ".join(parts)
+
+
 def watch_panel() -> None:
     store = _store()
     jobs = store.list()
@@ -218,10 +275,14 @@ def watch_panel() -> None:
         return
 
     st.subheader("Runs")
-    labels = {}
+    labels: dict[str, str] = {}
     for job in jobs:
-        when = "running" if job.state == RUNNING else job.state
-        labels[f"{job.course_code or Path(job.course_dir).name} · {when} · {job.id}"] = job.id
+        label = run_label(job)
+        # Two runs a minute apart on one device would collide. The run id is
+        # the tiebreaker, not the label.
+        while label in labels:
+            label += " "
+        labels[label] = job.id
 
     default = st.session_state.get("watching")
     keys = list(labels)
@@ -231,12 +292,17 @@ def watch_panel() -> None:
             if labels[key] == default:
                 index = position
                 break
-    chosen = st.selectbox("Which run", options=keys, index=index)
+    chosen = st.selectbox(
+        "Which run",
+        options=keys,
+        index=index,
+        help="Course, start time, device, duration, differences found, reviewer.",
+    )
     job_id = labels[chosen]
     st.session_state.watching = job_id
 
     status = store.read(job_id)
-    st.caption(f"Course folder `{status.course_dir}`")
+    st.caption(f"Run `{status.id}`, course folder `{status.course_dir}`")
     if status.state == RUNNING:
         _live(job_id)
         st.caption(

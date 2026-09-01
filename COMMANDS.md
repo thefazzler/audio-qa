@@ -22,8 +22,10 @@ Reads the course out of the delivered filenames
 `course.yaml`. The only thing filenames cannot answer — VENDOR or CGT — is
 prompted for.
 
-Copying the media and the storyboard `.pptx` into the new folder stays a human
-step, as does listing any outline-only topics under `unscripted_topics`.
+Copying the media and the script document into the new folder stays a human
+step, as does recording any topic that is not verbatim: outline-only topics
+under `unscripted_topics`, and anything with no script or a script of its own
+under `topics`.
 
 | Argument / flag | Description |
 | --- | --- |
@@ -71,7 +73,7 @@ or driver upgrade.
 The web interface and `qa-run` are two front doors to the same engine. Anything
 one can do the other can; neither knows anything the other does not.
 
-What it is for: handing the app a storyboard and a pile of narration files from
+What it is for: handing the app a script document and a pile of narration files from
 wherever they were downloaded, and having it do the organizing. It derives the
 learning path, course number, course code and topic list from the filenames,
 asks only the questions a filename cannot answer, copies everything into the
@@ -93,20 +95,23 @@ variable, the saved setting, then the platform default
     qa-run <course_dir>
 
 Runs eight stages in order over a course folder. Intermediates land in
-`<course_dir>/qa_work/`, the deliverable packet in `<course_dir>/qa_out/`. A
+`<course_dir>/qa_work/`; the finished packet goes to the output folder,
+`Documents\audio-qa` by default. A
 stage whose output already exists is skipped unless `--force` is given, so a
 rerun after a tuning change redoes only the stale work. Each stage prints a
 one-line summary, and a table of stage/status/time follows at the end.
 
 | Argument / flag | Description |
 | --- | --- |
-| `<course_dir>` | The course folder to process — one holding `course.yaml`, a `.pptx` and `audio/`. |
+| `<course_dir>` | The course folder to process — one holding `course.yaml`, one script document (`.pptx` for VENDOR, `.docx` for CGT) and `audio/`. |
 | `--stage NAME` | Run only this stage. Implies no skipping: the named stage always runs. |
 | `--force` | Rebuild outputs even when they already exist. |
 | `--model NAME` | ASR model, overriding `course.yaml` (`large-v3`, `medium`, …). |
 | `--threads N` | CPU threads for the ASR decode, overriding `course.yaml`. |
 | `--date YYYY-MM-DD` | Packet date, overriding today. Keeps golden tests reproducible. |
 | `--topic ID` | Restrict per-topic work to this topic. Repeatable. |
+| `--device {cpu,cuda,auto}` | Where to decode. Default `auto`: the fastest device that works. See D23 for what device does to results. |
+| `--output DIR` | Where to write the finished packet. Default: the configured output folder. Working files always stay in the course folder. |
 
 ### The stages
 
@@ -114,16 +119,17 @@ one-line summary, and a table of stage/status/time follows at the end.
 | --- | --- | --- |
 | `ingest` | `qa_work/ingest.json` | Sniffs each delivered file's header, passes readable audio through and demuxes the rest. |
 | `config` | `qa_work/manifest.json` | Reads `course.yaml` and builds the topic manifest with durations. |
-| `script` | `qa_work/script.json` | Pulls the narration script out of the storyboard `.pptx` and maps topics to slides. |
+| `script` | `qa_work/script.json` | Pulls the narration out of the course's script document and maps topics to it. Dispatches to the storyboard extractor for VENDOR and the BUS Writing Template extractor for CGT. |
 | `transcribe` | `qa_work/transcripts.json` | ASR over each topic's audio, with per-segment confidences and anomaly counts. |
 | `align` | `qa_work/discrepancies.json` | Word-level alignment of script against transcript; produces discrepancies and listen items. |
 | `artifacts` | `qa_work/artifacts.json` | Signal-level audio findings (clipping, silence, level problems) with severity. |
 | `checks` | `qa_work/checks.json` | Course-level rollups and coverage thresholds; flags topics needing attention. |
-| `packet` | `qa_out/packet_index.json` | Writes the reconciliation packet (`.md` and `.json`) for review. |
+| `packet` | `qa_out/packet_index.json` | Writes the reconciliation packet (`.md` and `.json`) to the output folder, named for the run and never overwriting an earlier one. |
 
 The packet is the end of phase 1: paste
-`qa_out/reconciliation_packet_<course>_<date>.md` into a Claude chat alongside
-`prompts/reconciliation_v2.md`. Automating that call is phase 2 and is
+`<output>/<course>_<date>_<time>_<device>-<precision>.md` into a Claude chat
+alongside `prompts/reconciliation_v2.md`. The stage prints the full path, and
+the results page shows it with a button that opens the folder. Automating that call is phase 2 and is
 currently a documented stub in [render.py](qa/render.py) — it raises
 `NotImplementedError` and has no command.
 

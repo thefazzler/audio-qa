@@ -35,8 +35,17 @@ from .util import QAError
 
 APP_NAME = "audio-qa"
 ENV_VAR = "AUDIO_QA_LIBRARY"
+OUTPUT_ENV_VAR = "AUDIO_QA_OUTPUT"
 CONFIG_NAME = "config.json"
 LIBRARY_DIR = "library"
+
+# Where finished packets go. Deliberately not the library: the library holds
+# working material, which is large, regenerable and nobody opens it by hand,
+# while a packet is the thing a person attaches to a chat five minutes after
+# the run finishes. Asking them to navigate into AppData to find it is a bad
+# answer. See D28.
+OUTPUT_DIR_NAME = "audio-qa"
+DOCUMENTS = "Documents"
 
 
 class LibraryError(QAError):
@@ -98,6 +107,13 @@ def default_library() -> Path:
     return user_data_dir() / LIBRARY_DIR
 
 
+def default_output() -> Path:
+    """Documents/audio-qa, or the home folder where there is no Documents."""
+    documents = _home() / DOCUMENTS
+    base = documents if documents.is_dir() else _home()
+    return base / OUTPUT_DIR_NAME
+
+
 # ---------------------------------------------------------------------------
 # Settings file
 # ---------------------------------------------------------------------------
@@ -133,6 +149,14 @@ def set_library(path: Path) -> Path:
     return Path(settings["library"])
 
 
+def set_output(path: Path) -> Path:
+    """Persist an output location chosen by a human."""
+    settings = read_settings()
+    settings["output"] = str(normalize(path))
+    write_settings(settings)
+    return Path(settings["output"])
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -158,6 +182,41 @@ def resolve_library(explicit: Path | str | None = None) -> Resolution:
         return Resolution(normalize(from_file), "settings")
 
     return Resolution(normalize(default_library()), "default")
+
+
+def resolve_output(explicit: Path | str | None = None) -> Resolution:
+    """Where finished packets go, and which layer decided it.
+
+    Same four layers as the library, for the same reasons: a flag for one run,
+    an environment variable for a scripted or containerized one, a settings
+    file for the person who never opens a terminal, and a default.
+    """
+    if explicit:
+        return Resolution(normalize(explicit), "argument")
+
+    from_env = os.environ.get(OUTPUT_ENV_VAR)
+    if from_env and from_env.strip():
+        return Resolution(normalize(from_env), "environment")
+
+    from_file = read_settings().get("output")
+    if from_file and str(from_file).strip():
+        return Resolution(normalize(from_file), "settings")
+
+    return Resolution(normalize(default_output()), "default")
+
+
+def output_root(explicit: Path | str | None = None, create: bool = False) -> Path:
+    """The output directory. Creates it only when asked to."""
+    root = resolve_output(explicit).path
+    if create:
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise LibraryError(
+                f"Cannot create the output folder at {root}:\n  {exc}\n"
+                f"  Set {OUTPUT_ENV_VAR}, or choose another location in the app."
+            ) from exc
+    return root
 
 
 def library_root(explicit: Path | str | None = None, create: bool = False) -> Path:
