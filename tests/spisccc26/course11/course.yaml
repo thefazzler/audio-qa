@@ -1,0 +1,15 @@
+# Course 11 of the spisccc26 learning path.
+# Deliberately no slide_map: the auto-mapper infers the topic-to-slide map from
+# the storyboard and is hard checked against the delivered file count. Add one
+# here only if the mapper halts with PROBABLE MAPPING ERROR.
+course_number: "11"
+project_type: VENDOR
+course_code: it_spisccc26_11_enus
+
+# Topics whose slides carry an outline rather than verbatim narration, such as
+# screen-capture demos. They are excluded from word-level alignment and their
+# transcripts run at full length in the packet.
+# TODO: fill this in after reviewing the storyboard, using the topic ids from
+# the delivered filenames (for example ["09"]). Leave it empty if every topic
+# is scripted.
+unscripted_topics: [12]

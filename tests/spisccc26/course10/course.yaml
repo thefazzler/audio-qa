@@ -1,0 +1,12 @@
+# Course 10 known-answer test case.
+# Deliberately no slide_map: the auto-mapper must reproduce the known
+# topic-to-slide map on its own. See Audio_QA_Pipeline_Build_Spec_v1.md.
+course_number: "10"
+project_type: VENDOR
+course_code: it_spisccc26_10_enus
+
+# Topic 09 is a screen-capture demo. Slide 43 carries an outline, not
+# verbatim narration, so it is excluded from word-level alignment.
+# NOTE: the manual findings report calls this topic "09_01"; the delivered
+# file is named _09.mp4, so the pipeline topic id is "09".
+unscripted_topics: ["09"]

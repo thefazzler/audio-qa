@@ -1,0 +1,27 @@
+# Pronunciation watchlist for the spisccc26 learning path.
+#
+# One watchlist per learning path: these acronyms are shared across the whole
+# certification journey, not owned by any one course.
+#
+# This layer detects likely mispronunciation and routes it to a human. It never
+# certifies pronunciation as correct or wrong: ASR emits orthography, so a match
+# means the expected spelling appeared, not that the term was said correctly.
+#
+# Seeded from the Course 10 and Course 11 runs. Only terms those runs already
+# flagged as misheard or low confidence are here; the rest of the proposals are
+# in watchlist.candidates.yaml, waiting for a human to promote them.
+#
+# say is a note for people, never used for matching. TODO means nobody has
+# written it yet; the pipeline does not guess pronunciations.
+
+# Course 11 heard this as "SIM" (p 0.474), "some" (p 0.282) and "SIM" (p 0.533)
+# at three separate sites, in topics 01, 11 and 13.
+- term: "SIEM"
+  expect: "SIEM"
+  say: TODO
+
+# Course 10 topic 04 decoded this at p 0.415, the lowest confidence word in
+# that course.
+- term: "SaaS"
+  expect: "SaaS"
+  say: TODO

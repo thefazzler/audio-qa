@@ -1,0 +1,29 @@
+[project]
+name = "audio-qa"
+version = "0.1.0"
+description = "Local synthetic-voice QA pipeline: course folder in, reconciliation packet out."
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    "python-pptx>=1.0",
+    "soundfile>=0.12",
+    "numpy>=1.26",
+    "num2words>=0.5.13",
+    "rapidfuzz>=3.9",
+]
+
+[project.optional-dependencies]
+asr = ["faster-whisper>=1.1"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+qa-run = "qa.cli:main"
+qa-new-course = "qa.new_course:main"
+qa-terms = "qa.terms:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["qa"]

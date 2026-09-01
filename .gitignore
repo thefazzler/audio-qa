@@ -1,0 +1,37 @@
+# Pipeline intermediates and outputs
+qa_work/
+qa_out/
+
+# Audio and video source material (never committed)
+*.mp3
+*.mp4
+*.m4a
+*.wav
+*.flac
+*.mov
+*.mkv
+
+# ASR model cache
+models/
+.cache/
+*.bin
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Skillsoft source material: never committed to this repo
+# Findings reports quote storyboard script text verbatim.
+*_Audio_QA_Findings_*.md
+*.pptx
+*.potx
+*.ppt
+tests/*/*/audio/
+
+# Google Drive sync scratch directory
+.tmp.driveupload/

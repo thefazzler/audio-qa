@@ -1,0 +1,63 @@
+# Watchlist candidates for the spisccc26 learning path.
+# Proposed by qa-terms from the storyboard scripts. This file is never
+# read by the pipeline. Promote a term by copying its block into
+# watchlist.yaml and filling in say; delete the rest.
+#
+# say is left as TODO on purpose. How a term should be pronounced is not
+# derivable from a storyboard and is not guessed here.
+
+- term: "AI"
+  expect: "AI"
+  say: TODO
+  occurrences: 56
+  seen_in: "course10:01, course10:08, course10:10, course11:01, course11:11, course11:13"
+
+- term: "SIEM"
+  expect: "SIEM"
+  say: TODO
+  occurrences: 14
+  seen_in: "course11:01, course11:11, course11:13"
+
+- term: "SaaS"
+  expect: "SaaS"
+  say: TODO
+  occurrences: 8
+  seen_in: "course10:01, course10:04"
+
+- term: "CTI"
+  expect: "CTI"
+  say: TODO
+  occurrences: 6
+  seen_in: "course11:10"
+
+- term: "IaaS"
+  expect: "IaaS"
+  say: TODO
+  occurrences: 6
+  seen_in: "course10:01, course10:04"
+
+- term: "PaaS"
+  expect: "PaaS"
+  say: TODO
+  occurrences: 6
+  seen_in: "course10:01, course10:04"
+
+- term: "ID"
+  expect: "ID"
+  say: TODO
+  occurrences: 2
+  seen_in: "course11:12"
+
+- term: "IP"
+  expect: "IP"
+  say: TODO
+  occurrences: 1
+  seen_in: "course11:10"
+
+- term: "MITRE"
+  expect: "MITRE"
+  say: TODO
+  occurrences: 1
+  seen_in: "course11:10"
+
+

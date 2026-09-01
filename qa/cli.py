@@ -1,0 +1,302 @@
+"""Module 1: command line entry point.
+
+    qa-run <course_dir>                 run every stage in order
+    qa-run --stage script <course_dir>  rerun one stage
+    qa-run --force <course_dir>         ignore existing outputs
+
+A stage whose output already exists is skipped unless --force is given, so a
+full run after a tuning change re-does only the work that is actually stale.
+Failures stop the run and print one specific message rather than a traceback.
+
+Later stages are registered here as they are built.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+from .util import QAError, read_json
+
+
+@dataclass(frozen=True)
+class Stage:
+    name: str
+    output: str
+    run: Callable[[Path, bool], dict]
+    summary: Callable[[dict], str]
+
+
+def _ingest(course_dir: Path, force: bool) -> dict:
+    from .config import load_course_yaml
+    from .ingest import run_ingest
+
+    cfg = load_course_yaml(course_dir)
+    return run_ingest(course_dir, cfg.project_type, force=force)
+
+
+def _ingest_summary(result: dict) -> str:
+    counts = result["counts"]
+    parts = [f"{counts['total']} files"]
+    if counts["passthrough"]:
+        parts.append(f"{counts['passthrough']} passthrough")
+    if counts["demuxed"]:
+        parts.append(f"{counts['demuxed']} demuxed")
+    if counts["reused"]:
+        parts.append(f"{counts['reused']} reused")
+    return ", ".join(parts)
+
+
+def _config(course_dir: Path, force: bool) -> dict:
+    from .config import run_config
+
+    return run_config(course_dir, force=force)
+
+
+def _config_summary(manifest: dict) -> str:
+    minutes = manifest["total_duration_s"] / 60.0
+    return f"{manifest['topic_count']} topics, {minutes:.1f} min of audio"
+
+
+def _script(course_dir: Path, force: bool) -> dict:
+    from .extract_script import run_extract_script
+
+    return run_extract_script(course_dir, force=force)
+
+
+def _script_summary(script: dict) -> str:
+    words = sum(t["word_count"] for t in script["topics"])
+    source = script["mapping"]["source"]
+    return (
+        f"{len(script['topics'])} topics mapped ({source}), "
+        f"{words} script words, {script['slide_count']} slides"
+    )
+
+
+def _transcribe(course_dir: Path, force: bool) -> dict:
+    from .transcribe import run_transcribe
+
+    return run_transcribe(
+        course_dir, force=force, overrides=_ASR_OVERRIDES, only_topics=_ONLY_TOPICS
+    )
+
+
+def _transcribe_summary(index: dict) -> str:
+    words = sum(t["word_count"] for t in index["topics"])
+    anomalies = sum(t["anomaly_count"] for t in index["topics"])
+    decode = sum(t["decode_seconds"] for t in index["topics"])
+    return (
+        f"{len(index['topics'])} topics, {words} words, {anomalies} anomalies, "
+        f"{index['model']}, {decode / 60.0:.1f} min decode"
+    )
+
+
+def _align(course_dir: Path, force: bool) -> dict:
+    from .align import run_align
+
+    return run_align(course_dir, force=force)
+
+
+def _align_summary(result: dict) -> str:
+    scripted = [t for t in result["topics"] if t["aligned"]]
+    clean = sum(1 for t in scripted if t["discrepancies"] == 0)
+    coverage = (
+        sum(t["coverage"] for t in scripted) / len(scripted) if scripted else 0.0
+    )
+    listen = sum(t["listen_items"] for t in result["topics"])
+    return (
+        f"{result['total_discrepancies']} discrepancies across {len(scripted)} "
+        f"scripted topics ({clean} clean), {coverage * 100:.1f} percent coverage, "
+        f"{listen} listen items"
+    )
+
+
+def _artifacts(course_dir: Path, force: bool) -> dict:
+    from .artifacts import run_artifacts
+
+    return run_artifacts(course_dir, force=force)
+
+
+def _artifacts_summary(result: dict) -> str:
+    high = sum(r["high"] for r in result["topics"])
+    return (
+        f"{result['total_findings']} audio findings across "
+        f"{len(result['topics'])} files, {high} high severity"
+    )
+
+
+def _checks(course_dir: Path, force: bool) -> dict:
+    from .checks import run_checks
+
+    return run_checks(course_dir, force=force)
+
+
+def _checks_summary(result: dict) -> str:
+    s = result["summary"]
+    flagged = s["flagged_topics"]
+    return (
+        f"{s['topic_count']} topics, {(s['mean_coverage'] or 0) * 100:.2f} percent "
+        f"mean coverage, {len(flagged)} flagged"
+        + (f" ({', '.join(flagged)})" if flagged else "")
+    )
+
+
+def _packet(course_dir: Path, force: bool) -> dict:
+    from .packet import run_packet
+
+    return run_packet(course_dir, force=force, run_date=_RUN_DATE)
+
+
+def _packet_summary(result: dict) -> str:
+    return (
+        f"{Path(result['path']).name}, {result['words']} words, "
+        f"about {result['estimated_pages']} pages"
+    )
+
+
+STAGES: tuple[Stage, ...] = (
+    Stage("ingest", "qa_work/ingest.json", _ingest, _ingest_summary),
+    Stage("config", "qa_work/manifest.json", _config, _config_summary),
+    Stage("script", "qa_work/script.json", _script, _script_summary),
+    Stage("transcribe", "qa_work/transcripts.json", _transcribe, _transcribe_summary),
+    Stage("align", "qa_work/discrepancies.json", _align, _align_summary),
+    Stage("artifacts", "qa_work/artifacts.json", _artifacts, _artifacts_summary),
+    Stage("checks", "qa_work/checks.json", _checks, _checks_summary),
+    Stage("packet", "qa_out/packet_index.json", _packet, _packet_summary),
+)
+
+# Set from the command line before any stage runs.
+_ASR_OVERRIDES: dict = {}
+_ONLY_TOPICS: list[str] | None = None
+_RUN_DATE: str | None = None
+
+STAGE_NAMES = tuple(s.name for s in STAGES)
+
+
+_SEEN_WARNINGS: set[str] = set()
+
+
+def _print_warnings(result: dict) -> None:
+    """Print each warning once per run.
+
+    Later stages carry earlier stages' warnings forward in their own output,
+    which is right for the JSON and wrong for the console: without this the
+    ingest warning prints again under config.
+    """
+    for warning in result.get("warnings", []):
+        if warning in _SEEN_WARNINGS:
+            continue
+        _SEEN_WARNINGS.add(warning)
+        print(f"        WARNING  {warning}")
+
+
+def run(course_dir: Path, only: str | None, force: bool) -> int:
+    if not course_dir.is_dir():
+        raise QAError(
+            f"Course folder does not exist: {course_dir}\n"
+            "  Expected a folder holding course.yaml, one .pptx and audio/."
+        )
+
+    selected = [s for s in STAGES if only is None or s.name == only]
+    rows: list[tuple[str, str, str, float]] = []
+    started_run = time.monotonic()
+
+    for stage in selected:
+        output = course_dir / stage.output
+        started = time.monotonic()
+        if output.exists() and not force and only is None:
+            try:
+                result = read_json(output)
+                summary = stage.summary(result)
+                print(f"  [skip] {stage.name:<10} {summary}", flush=True)
+                rows.append((stage.name, "skipped", summary, 0.0))
+                continue
+            except (ValueError, KeyError, OSError):
+                pass  # unreadable or stale output: rebuild it
+
+        result = stage.run(course_dir, force)
+        elapsed = time.monotonic() - started
+        summary = stage.summary(result)
+        print(f"  [ok]   {stage.name:<10} {summary}  ({elapsed:.1f}s)", flush=True)
+        _print_warnings(result)
+        rows.append((stage.name, "ok", summary, elapsed))
+
+    total = time.monotonic() - started_run
+    print()
+    print(f"  {'stage':<11}{'status':<9}{'time':>8}  detail")
+    print("  " + "-" * 76)
+    for name, status, detail, elapsed in rows:
+        clock = f"{elapsed:.1f}s" if status == "ok" else "-"
+        print(f"  {name:<11}{status:<9}{clock:>8}  {detail}")
+    print("  " + "-" * 76)
+    print(f"  {'total':<11}{'':<9}{total:>7.1f}s")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="qa-run",
+        description="Local synthetic-voice QA pipeline.",
+        epilog=(
+            "stages run in order: " + " -> ".join(STAGE_NAMES) + "\n"
+            "intermediates land in <course_dir>/qa_work/, "
+            "the packet in <course_dir>/qa_out/"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("course_dir", type=Path, help="course folder to process")
+    parser.add_argument(
+        "--stage",
+        choices=STAGE_NAMES,
+        help="run only this stage",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="rebuild outputs even when they already exist",
+    )
+    parser.add_argument(
+        "--model",
+        help="ASR model, overriding course.yaml (large-v3, medium, ...)",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        help="CPU threads for the ASR decode, overriding course.yaml",
+    )
+    parser.add_argument(
+        "--date",
+        metavar="YYYY-MM-DD",
+        help="packet date, overriding today; keeps golden tests reproducible",
+    )
+    parser.add_argument(
+        "--topic",
+        action="append",
+        metavar="ID",
+        help="restrict per topic work to this topic; repeatable",
+    )
+    args = parser.parse_args(argv)
+
+    global _ASR_OVERRIDES, _ONLY_TOPICS, _RUN_DATE
+    _ASR_OVERRIDES = {"model": args.model, "cpu_threads": args.threads}
+    _ONLY_TOPICS = args.topic
+    _RUN_DATE = args.date
+
+    course_dir = args.course_dir.resolve()
+    print(f"audio-qa: {course_dir}", flush=True)
+    try:
+        return run(course_dir, args.stage, args.force)
+    except QAError as exc:
+        print(f"\nFAILED: {exc}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
