@@ -18,8 +18,10 @@ The probe is honest about not knowing. Where CUDA is missing, too old, or
 present but unusable, the reason is reported in words a person can act on.
 "unavailable" with no reason is what sends someone to a support channel.
 
-Transcription runs CPU only in this build. The probe and the selector exist so
-the GPU path can be added later without touching the UI.
+Transcription honours the selection. This module used to end by saying the
+opposite, that the GPU path was wired but unused, two paragraphs after the one
+above reporting a GPU decode of Course 11; a file that contradicts itself is
+read by whichever half the reader reaches first.
 """
 
 from __future__ import annotations

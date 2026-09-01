@@ -519,6 +519,13 @@ the GPU path can be added without touching the UI. The UI states that device
 affects speed and not results, in three places, because a person who believes
 otherwise will re-run a course hoping for a different answer.
 
+**Both halves of that last paragraph were overtaken by D23, and it is left here
+as written rather than quietly edited.** Transcription now decodes where it is
+told to. And "device affects speed and not results" was never measured when it
+was written into three places; when it was measured it turned out to be false,
+which is why the wording now lives in one constant instead of three copies. The
+entry stands as a record of what was believed, with the correction attached.
+
 The browser's own file uploader is not used. It hands over bytes rather than
 paths, and this intake needs paths: to verify a copy against its source, and to
 offer to clean up the originals. A 128 MB demo video also has no business
