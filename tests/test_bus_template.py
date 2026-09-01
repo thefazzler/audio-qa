@@ -431,3 +431,57 @@ def test_the_course_id_is_the_courses_own(real_script):
 def test_the_pronunciation_guide_is_empty_in_this_delivery(real_script):
     """Empty here, and the extractor must say so rather than inventing rows."""
     assert real_script["pronunciation_guide"] == []
+
+
+# ---------------------------------------------------------------------------
+# What reaches the packet
+# ---------------------------------------------------------------------------
+
+def test_the_authors_word_count_and_estimate_reach_the_packet(generated):
+    """A pacing reference from the source side, and never a threshold."""
+    from qa.packet import _author_estimates
+
+    script = build_script_docx_bus(generated, ["01", "02", "03"], {}, "it_gen01_02_enus")
+    lines = _author_estimates(script)
+    text = "\n".join(lines)
+
+    assert "Author's word count" in text
+    assert "0m 06s" in text
+    assert "reference" in text and "threshold" in text
+    # One row per topic, plus the header rows.
+    assert sum(1 for line in lines if line.startswith("| 0")) == 3
+
+
+def test_a_storyboard_course_gets_no_author_estimate_section(tmp_path):
+    """A pptx carries no such number, so the section is simply absent."""
+    from qa.packet import _author_estimates
+
+    assert _author_estimates({"topics": [{"topic": "01", "word_count": 10}]}) == []
+    assert _author_estimates({}) == []
+
+
+def test_a_disagreement_with_the_authors_count_is_shown_not_hidden(generated):
+    """If extraction and the author disagree, the reader sees by how much."""
+    from qa.packet import _author_estimates
+
+    script = build_script_docx_bus(generated, ["01", "02", "03"], {}, "it_gen01_02_enus")
+    script["topics"][0]["word_count"] = script["topics"][0]["author_word_count"] + 4
+    text = "\n".join(_author_estimates(script))
+    assert "(+4)" in text
+
+
+def test_the_dropped_block_reaches_the_packet_with_its_reason(tmp_path):
+    from qa.packet import _dropped_blocks
+
+    blocks = [
+        {"title": "COURSE OVERVIEW", "words": 6, "scenes": [("Scene 1: Intro", "The kettle boils.")]},
+        PLACEHOLDER,
+        {"title": "TOPIC 3 TITLE: COURSE SUMMARY", "words": 4, "scenes": [("Scene 1: Summary", "The pot was repotted.")]},
+    ]
+    path = make_bus_document(tmp_path / "placeholder.docx", blocks=blocks)
+    script = build_script_docx_bus(path, ["01", "02"], {}, "it_gen01_02_enus")
+
+    text = "\n".join(_dropped_blocks(script))
+    assert "not treated as a topic" in text
+    assert "HTML INTERACTIVITY" in text.upper()
+    assert "will be replaced by" in text

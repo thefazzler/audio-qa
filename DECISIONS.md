@@ -999,6 +999,14 @@ Verified against a real delivery rather than assumed, and the assertions are in
   pronunciation attached, which is the one thing that command otherwise cannot
   know. Empty in the reference document, and the extractor says so rather than
   inventing rows.
+- **The author's own word count and estimated duration are carried to the
+  packet and are not a threshold.** They are a source-side pacing reference: a
+  number a human wrote down before anything was recorded. The pace check stays
+  what D6 made it, a ratio against the script the file was actually read from.
+  A threshold built from these would be a threshold built from an estimate.
+  They also happen to be the cleanest evidence that the SCRIPT-only rule works:
+  on the reference document all eleven blocks match exactly, and the packet
+  shows the difference where they do not.
 
 ### The two checks that need no script
 

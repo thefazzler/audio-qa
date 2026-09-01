@@ -208,33 +208,37 @@ def test_discrepancies_are_few_and_no_content_is_missing():
 
 
 def test_the_saas_family_is_absorbed_rather_than_reported(script):
-    """GPU decode writes "SAS" for "SaaS"; the narrator said "sass" both times.
+    """The service-model family never appears as a difference, on any device.
 
-    Two sites in topic 04. Both are gone from the discrepancy table now that
-    EQUIVALENCES folds the family, and the term is on the watchlist so it is
-    listened to rather than diffed: an equivalence that absorbs a difference
-    without a watchlist entry beside it is the pipeline quietly not looking.
+    GPU decode writes "SAS" for "SaaS" at two sites in topic 04 and used to
+    report them as substitutions; the narrator said "sass" both times. CPU
+    decode writes them differently again, which is exactly why this asserts the
+    claim rather than the tokens: whatever the decoder wrote, no member of the
+    family reaches the discrepancy table.
 
-    The course total went from 4 to 3, not to 2, and the missing one is the
-    point of this test. One of the two SAS sites had been fused into a single
-    substitution row with a separate low-confidence insertion next to it, so
-    removing the SaaS half leaves that insertion standing on its own, correctly,
-    as the listen item it always was.
+    The term is on the watchlist, so it is listened to rather than diffed. An
+    equivalence that absorbs a difference without a watchlist entry beside it is
+    the pipeline quietly ceasing to look.
+
+    On the GPU run the course total went from 4 differences to 3, not to 2 as
+    expected, and the missing one is worth recording. One of the two SAS sites
+    had been fused into a single substitution row together with a separate
+    low-confidence insertion, so removing the SaaS half leaves that insertion
+    standing on its own, correctly, as the listen item it always was.
     """
-    result = discrepancies("04")
-    said = " ".join(
-        (d["script_says"] + " " + d["voice_said"]) for d in result["discrepancies"]
-    )
-    assert "SAS" not in said
-    assert "SaaS" not in said
+    family = {"SAS", "SAAS", "IAS", "IAAS", "PAS", "PAAS"}
+    for topic in SCRIPTED:
+        for item in discrepancies(topic)["discrepancies"]:
+            words = (item["script_says"] + " " + item["voice_said"]).split()
+            hit = family & {w.strip(" .,").upper() for w in words}
+            assert not hit, f"topic {topic} reports {hit} as a difference"
 
+
+def test_the_absorbed_terms_are_still_in_the_transcript(script):
+    """Absorbed means not diffed, not removed. The evidence stays on the page."""
     transcript = json.loads((WORK / "transcript_04.json").read_text(encoding="utf-8"))
-    heard = [w["w"].strip(" .,") for w in transcript["words"]]
-    assert heard.count("SAS") == 2, "the two sites are still in the transcript"
-
-    insertions = [d for d in result["discrepancies"] if d["type"] == "insertion"]
-    assert len(insertions) == 1
-    assert insertions[0]["listen_item"] is True
+    heard = {w["w"].strip(" .,").upper() for w in transcript["words"]}
+    assert {"SAS", "SAAS"} & heard, "topic 04 is the service-model topic"
 
 
 def test_the_absorbed_terms_are_all_on_the_watchlist(checks):

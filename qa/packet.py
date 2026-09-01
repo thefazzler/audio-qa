@@ -173,7 +173,43 @@ def _topic_map(checks: dict, script: dict | None = None) -> list[str]:
             f"{STATE_NOTE.get(state, state)} | {_fmt_time(row['duration_s'])} |"
         )
     lines.append("")
+    lines += _author_estimates(script or {})
     lines += _dropped_blocks(script or {})
+    return lines
+
+
+def _author_estimates(script: dict) -> list[str]:
+    """What the script's own author expected each topic to run to.
+
+    A source-side pacing reference and deliberately not a threshold. The
+    pipeline's own pace check compares the transcript against the script it was
+    read from, which is a ratio and is immune to how fast a given voice talks
+    (D6). This is a different thing: the number a human wrote down before
+    anyone recorded anything. Worth having on the page when a topic reads long
+    or short, and worth nobody turning into a limit.
+    """
+    rows = [t for t in script.get("topics", []) if t.get("author_word_count")]
+    if not rows:
+        return []
+    lines = [
+        "The script document states a word count and an estimated duration per "
+        "topic, written by its author. They are reported here as a pacing "
+        "reference from the source side. Nothing in the pipeline compares "
+        "against them and nothing should: a threshold built from them would be "
+        "a threshold built from an estimate.",
+        "",
+        "| Topic | Author's word count | Extracted | Author's estimate |",
+        "|---|---|---|---|",
+    ]
+    for row in rows:
+        extracted = row.get("word_count")
+        stated = row.get("author_word_count")
+        note = "" if extracted == stated else f" ({extracted - stated:+d})"
+        lines.append(
+            f"| {row['topic']} | {stated} | {extracted}{note} | "
+            f"{_escape(row.get('author_estimate') or 'n/a')} |"
+        )
+    lines.append("")
     return lines
 
 

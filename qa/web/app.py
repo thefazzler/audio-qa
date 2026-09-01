@@ -350,7 +350,6 @@ def _form(selection) -> IntakeForm | None:
     with st.form("intake"):
         devices = _devices()
         labels = {d.key: d.display for d in devices}
-        usable = [d.key for d in devices if d.available]
         unusable = [d for d in devices if not d.available]
         device = st.radio(
             "Device",
@@ -373,7 +372,6 @@ def _form(selection) -> IntakeForm | None:
 
     if not submitted:
         return None
-    _ = usable
     return IntakeForm(
         project_type=project_type,
         unscripted_topics=(),
