@@ -168,6 +168,12 @@ finishes in seconds.
 
 `--force` additionally re-transcribes every topic.
 
+## New here?
+
+`HANDOVER.md` explains what this tool is for and how it fits the wider process.
+`DECISIONS.md` explains why anything is the way it is. Read the relevant
+decision before changing a threshold.
+
 ## Not commands
 
 `qa/watchlist.py` and the other modules under `qa/` are libraries with no CLI of

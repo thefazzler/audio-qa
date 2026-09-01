@@ -302,6 +302,14 @@ drop the course material into `tests/spisccc26/course10/` and run:
 
     qa-run tests/spisccc26/course10 --date 2026-08-27
 
+## If you are taking this over
+
+Read `HANDOVER.md` first. It covers what the tool is for, where course material
+comes from, the whole loop from delivery through judgment to remediation, what
+is deliberately not automated, what is unfinished, and the things that will
+bite you. Gaps that only the owner can fill are marked TODO there rather than
+guessed at.
+
 ## Notes
 
 `DECISIONS.md` records where the build departs from
