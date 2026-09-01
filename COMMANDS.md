@@ -90,6 +90,17 @@ precedence: an explicit setting in the app, the `AUDIO_QA_LIBRARY` environment
 variable, the saved setting, then the platform default
 (`%LOCALAPPDATA%` then `audio-qa\library`, on Windows).
 
+Finished packets go somewhere else, because a packet is a thing a person opens
+five minutes later rather than a working file. Same four layers, reading
+`AUDIO_QA_OUTPUT` instead, and defaulting to `Documents\audio-qa`. Both
+locations are shown in the sidebar with a button that opens the folder.
+
+The interface starts with Streamlit's own first-run behaviour turned off: the
+email prompt, which pauses the terminal and reads as a hang; the developer
+tooling recommendation; and the Deploy button, which invites pushing customer
+narration to Streamlit's cloud. These are passed as flags, so nothing on the
+machine is changed and running `streamlit` by hand still behaves normally.
+
 ## `qa-run` — run the QA pipeline
 
     qa-run <course_dir>
