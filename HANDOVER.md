@@ -4,6 +4,12 @@ For whoever picks this up next. Written so that if the person who built it is
 unavailable, you can run a course end to end, understand why it is built the
 way it is, and know what is unfinished.
 
+**Step one on a new machine: run `qa-setup`.** It checks every prerequisite,
+tells you the exact command for anything missing, installs the things that are
+safe to install, and finishes by running the whole pipeline on a generated
+fixture to prove it works. `qa-setup --check` is also the troubleshooting tool
+later, when something breaks after a Python or driver upgrade. See D22.
+
 Read this first, then `README.md` for how to install and run, then
 `DECISIONS.md` when you want to know why something is the way it is. Do not
 change a threshold before reading its decision entry; nearly every one was set

@@ -42,6 +42,26 @@ keeps the LLM for judgment only. It also computes the completeness attestations
 the transcribers used to self-report, because an instrument that stopped early
 cannot honestly certify that it did not.
 
+## Install
+
+Clone, then run the setup command. It tells you what is missing and how to fix
+it, installs what is safe to install, and proves the result works:
+
+    git clone https://github.com/thefazzler/audio-qa.git
+    cd audio-qa
+    python -m qa.setup
+
+Anything it reports as MISSING or VERSION MISMATCH in Python, git, ffmpeg or
+ffprobe is system software: run the command it prints, then run `qa-setup`
+again. It will not install those for you.
+
+Once the virtual environment exists, `qa-setup` is on the path:
+
+    qa-setup --check     re-diagnose at any time, changing nothing
+
+Use `qa-setup --check` later as the troubleshooting tool, too. When something
+breaks after a Python or driver upgrade, it shows what changed.
+
 ## Requirements
 
 - **Python 3.11 or newer.** 3.12 is what this is developed against. Avoid 3.14
@@ -68,7 +88,10 @@ Verify with `ffmpeg -version` and `ffprobe -version`. Both are needed.
 On the future Linux server this is a deployment-time package for ops, not
 something this repo installs.
 
-## Install
+## Installing by hand
+
+`qa-setup` does all of this for you. These are here for anyone who would rather
+do it themselves, or who is packaging this elsewhere.
 
 With uv:
 

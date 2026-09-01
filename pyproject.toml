@@ -18,6 +18,7 @@ web = ["streamlit>=1.36"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
+qa-setup = "qa.setup:main"
 qa-run = "qa.cli:main"
 qa-web = "qa.web.launch:main"
 qa-new-course = "qa.new_course:main"

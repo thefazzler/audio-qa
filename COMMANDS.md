@@ -34,6 +34,34 @@ step, as does listing any outline-only topics under `unscripted_topics`.
 
 ---
 
+## `qa-setup` — check this machine, then finish the install
+
+    qa-setup                    check, then install what is safe to install
+    qa-setup --check            diagnose only; changes nothing
+    qa-setup --yes              answer yes to the download prompts
+    qa-setup --no-smoke         skip the end to end smoke test
+
+Start here on a new machine. It prints one row per prerequisite with what was
+found, what is required, and the exact command to fix it on this platform.
+
+It draws a hard line down the middle. **System software is never installed for
+you**: Python, git, ffmpeg, ffprobe and the CUDA runtime are checked and
+explained, and you run the command it prints. **Local things it installs
+itself**: the virtual environment, the Python packages, and the ASR model,
+because those live inside this project or your own cache and change nothing
+about the machine.
+
+The model download is deliberate rather than silent. Today the first
+transcription quietly fetches about 3 GB; here you are told the size and asked.
+Decline and it says plainly that the first transcription will fetch it.
+
+It ends with a smoke test that runs the whole pipeline on a generated fixture,
+because installed and works are different claims.
+
+`--check` is also the troubleshooting tool. It is fast, changes nothing, and
+gives the same table on day one and on the day something breaks after a Python
+or driver upgrade.
+
 ## `qa-web` — the web interface
 
     qa-web                      start the local interface on port 8501

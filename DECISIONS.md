@@ -4,6 +4,26 @@ Amendments to Audio_QA_Pipeline_Build_Spec_v1.md, agreed during the build.
 The spec file is left as written; this file is what the code follows where the
 two differ.
 
+## How this file is maintained
+
+**A decision that earns a code comment or a test earns an entry here.**
+
+The reasoning behind a choice must never live only in the code. A comment is
+read by whoever happens to open that file; a test states what must stay true
+but not why it was ever in doubt. Neither is where someone looks before
+changing a threshold, and neither survives the file being refactored.
+
+This rule was written after a real miss. The transcript cache key deliberately
+excludes the device and deliberately includes the compute type, which is the
+single choice most likely to be undone by a well meaning change to the GPU
+path. It had a thorough comment and five tests, and no entry here, so the
+handover ended up pointing at a decision that did not exist. It is now D21.
+
+Practically: if you find yourself writing a comment that explains why rather
+than what, or a test whose name is an argument, write the entry too. Number it
+next in sequence, and cite it from the comment. A test asserts that every D
+reference in the documents resolves to a real entry.
+
 ## D1. Ingest stage added ahead of config (spec had no stage 0)
 
 Scan the delivery folder, identify each file by sniffing its header rather than
@@ -646,3 +666,73 @@ changes do not; and a changed audio hash never does.
 
 This is the decision `HANDOVER.md` points at when it says the GPU path is wired
 but not enabled.
+
+## D22. qa-setup: what it installs, what it only explains
+
+Until now the install worked because the prerequisites had been put on two
+machines by hand with the owner present. That is not a distribution.
+`qa-setup` replaces the owner standing next to you.
+
+**The line down the middle, and why it is where it is.** System software is
+checked, explained and never installed: Python, git, ffmpeg, ffprobe and the
+CUDA runtime. Local things are installed: the project's own virtual
+environment, its Python packages, and the ASR model. The test is not how hard
+the install is, it is whose machine changes. A venv and a model cache are this
+project's business; anything that lands in Program Files or on the system PATH
+is the user's. This extends D2 from ffmpeg to every prerequisite, and puts the
+gates that were scattered through the pipeline in one place.
+
+**Four states, kept distinct.** OK, MISSING, VERSION MISMATCH, NOT USABLE.
+Collapsing them into "unavailable" would be the single worst thing this command
+could do, because "not installed" and "installed but the wrong version" have
+different fixes and a user told the wrong one will install something they
+already have.
+
+**The Python row catches the newer-is-worse trap.** A machine with 3.14 has a
+newer Python and a broken install, because ctranslate2 publishes no wheels for
+it. The row says so and points at D9, rather than reporting a version that
+looks fine.
+
+**The model download is deliberate.** Today the first transcription silently
+fetches about three gigabytes, which is a poor thing to discover on a metered
+connection. Setup states the size and asks. Declining is fine and says plainly
+what will happen later.
+
+**It ends with a smoke test, not a summary.** The whole pipeline runs on a
+generated fixture with the tiny model, about two seconds, and reports pass or
+fail. Installed and works are different claims and only the second one matters.
+The fixture is generated rather than committed: it keeps binary media out of a
+repository that must stay free of customer material, it satisfies D16 by
+containing no course narration at all, and the generator works on any machine.
+
+### The CUDA row, and a correction to the task that specified it
+
+The row is built as specified: it asks ctranslate2 what it can actually use
+rather than whether a card exists, reports VERSION MISMATCH separately from no
+CUDA at all, and offers an additive remediation, the pip `nvidia-*-cu12`
+packages that land in the virtual environment and change nothing system wide.
+It never recommends uninstalling the old toolkit, because CUDA versions coexist
+and something else on the machine may depend on it; removing an orphan is noted
+as the user's own call. GPU is optional in every state and never blocks setup.
+
+**The premise about this machine was wrong, and the correction matters.** The
+task described a desktop with a stale CUDA 11.0 toolkit on PATH that
+ctranslate2 4.x cannot use, and set that up as the live fixture for this row.
+This machine is not that. It is a laptop with an RTX 3060, driver 616.56, and:
+
+    no CUDA toolkit installed, no CUDA_PATH, nothing CUDA on PATH,
+    no nvidia-* packages in the venv
+
+and a real `WhisperModel(device="cuda", compute_type="float16")` load
+**succeeds**. The driver supplies what ctranslate2 4.8.1 needs. The correct
+reading of this machine is CUDA OK, which is what the check reports, and it
+agrees with the ground truth load.
+
+So the mismatch path could not be validated against this hardware without
+inventing a fault. It is validated by injection instead: the tests drive the
+row with a broken probe plus an old toolkit and assert VERSION MISMATCH, an
+additive pip remediation, and that every mention of uninstalling is a
+prohibition rather than advice. That is a weaker proof than a live failure
+would have been, and it is the strongest available here. If a machine with the
+CUDA 11 situation turns up, run `qa-setup --check` on it: that is the
+confirmation still outstanding.
