@@ -117,24 +117,27 @@ def _headline(status) -> None:
 
 
 def _numbers(status) -> None:
-    columns = st.columns(4)
+    """Only what a person waiting needs: how far along, and how long left.
+
+    Device, model, measured rate and per topic decode times deliberately do not
+    appear here. They live once, in the stats panel on the Results tab. The
+    same numbers in two places drift, and a progress view is not the place to
+    read telemetry.
+    """
+    columns = st.columns(2)
     columns[0].metric(
         "Topics decoded", f"{status.decoded_count} of {status.topic_total}"
     )
     if status.reused_count:
-        columns[0].caption(f"{status.reused_count} reused, unchanged since the last run")
+        columns[0].caption(
+            f"{status.reused_count} reused, unchanged since the last run"
+        )
     columns[1].metric(
-        "Audio", f"{status.audio_done_s / 60:.0f} of {status.audio_total_s / 60:.0f} min"
+        "Time remaining",
+        _clock(status.eta_s) if status.eta_s is not None else "measuring",
     )
-    columns[2].metric(
-        "Speed",
-        f"{status.rate_realtime:.2f}x realtime" if status.rate_realtime else "measuring",
-    )
-    columns[3].metric(
-        "Time remaining", _clock(status.eta_s) if status.eta_s is not None else "measuring"
-    )
-    if status.eta_basis:
-        st.caption(f"Estimate: {status.eta_basis}. Measured on this machine, this run.")
+    if status.eta_s is None:
+        st.caption("The estimate appears once the first topic has finished.")
 
 
 def _stage_row(status) -> None:
@@ -163,9 +166,6 @@ def _topics(status) -> None:
                 "topic": topic.topic,
                 "state": topic.state,
                 "audio": f"{topic.duration_s / 60:.1f} min",
-                "decode": f"{topic.decode_seconds:.0f}s" if topic.decode_seconds else "",
-                "words": topic.words or "",
-                "wpm": topic.wpm or "",
                 "coverage": (
                     f"{topic.coverage * 100:.2f}%" if topic.coverage is not None else ""
                 ),
@@ -207,8 +207,8 @@ def _live(job_id: str) -> None:
     _draw(status)
     if status.state == DONE:
         st.caption(
-            "Next: the packet is ready for the judgment step. Open the Results "
-            "tab."
+            "Finished. The checks, the listen list and the packet are on the "
+            "Results tab."
         )
 
 

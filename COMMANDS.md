@@ -140,6 +140,24 @@ decoding.
 Only one run per course at a time. Two would overwrite each other's
 intermediates.
 
+## Results
+
+When a run finishes, the Results tab shows what it found and what to do next,
+in that order:
+
+- the listen list first, because it is the only part that needs a person: every
+  site below the ASR confidence floor, every identifier whose voicing cannot be
+  judged on paper, every watchlist pronunciation candidate, and every
+  outline-only topic. Sites that two independent detectors both flagged are
+  marked; those are worth listening to first.
+- the packet, ready to download, with the judgment step spelled out. Judgment
+  is manual: open a Claude chat, paste `prompts/reconciliation_v2.md`, attach
+  the packet. Verdicts and the edit sheet come from there, never from this app.
+- the checks table, one row per topic.
+- a stats panel, off by default, holding the engine, quantization, device,
+  thread count, measured decode rate, per topic decode times, quality signals
+  and the measured audio conventions. Telemetry lives here and nowhere else.
+
 ## Re-running a course
 
 Every stage runs every time. The cheap stages cost about six seconds together;

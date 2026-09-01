@@ -365,13 +365,18 @@ def main() -> None:
     )
     _sidebar()
 
-    intake_tab, runs_tab = st.tabs(["Intake", "Runs"])
+    intake_tab, runs_tab, results_tab = st.tabs(["Intake", "Runs", "Results"])
     with runs_tab:
         from qa.web.run_view import start_panel, watch_panel
 
         start_panel()
         st.divider()
         watch_panel()
+
+    with results_tab:
+        from qa.web.results_view import results_panel
+
+        results_panel()
 
     with intake_tab:
         _intake()

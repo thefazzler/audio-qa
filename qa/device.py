@@ -22,6 +22,7 @@ the GPU path can be added later without touching the UI.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 CPU = "cpu"
@@ -116,6 +117,57 @@ def probe_gpu() -> Device:
         detail=f"{count} CUDA device{'s' if count > 1 else ''}, "
         f"compute types {', '.join(sorted(names))}",
     )
+
+
+def memory() -> dict:
+    """Total and available system memory, in gigabytes.
+
+    Machine information, not a pipeline metric. Peak memory during a decode is
+    not measured anywhere, and the stats panel says so rather than implying
+    these numbers describe the run. What they do answer is the question people
+    actually ask, which is whether large-v3 will fit.
+    """
+    total = available = None
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = Status()
+            status.dwLength = ctypes.sizeof(Status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                total = status.ullTotalPhys
+                available = status.ullAvailPhys
+        else:
+            import os as _os
+
+            page = _os.sysconf("SC_PAGE_SIZE")
+            total = page * _os.sysconf("SC_PHYS_PAGES")
+            if hasattr(_os, "sysconf_names") and "SC_AVPHYS_PAGES" in _os.sysconf_names:
+                available = page * _os.sysconf("SC_AVPHYS_PAGES")
+    except Exception:
+        # Machine trivia must never be the reason a results page fails.
+        return {"measured": False}
+
+    gigabyte = 1024 ** 3
+    return {
+        "measured": total is not None,
+        "total_gb": round(total / gigabyte, 1) if total else None,
+        "available_gb": round(available / gigabyte, 1) if available else None,
+        "note": "system memory now; peak memory during a decode is not measured",
+    }
 
 
 def probe() -> list[Device]:

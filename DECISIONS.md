@@ -568,3 +568,47 @@ Three separate edits to this codebase silently did nothing this session,
 because a string replace whose pattern did not match is a no-op. One of them
 looked like a logic bug for several minutes. Bulk edits now assert that the
 pattern was found before writing.
+
+## D20. Results, the listen list, and one home for telemetry
+
+**The page is ordered by what happens next, not by what was computed.** The
+listen list comes before the checks table, because it is the only part that
+requires a person and the whole pipeline exists to produce it. Burying it under
+an expander would make the deliverable look like a footnote to the diagnostics.
+
+**This layer does not assign verdicts.** CLEAN, FIX RECOMMENDED and SHOWSTOPPER
+belong to the judgment step along with the Class 1 to 4 taxonomy. Putting them
+in the app would quietly move judgment out of the reconciliation prompt into
+software that has no basis for it, and the packet's whole claim is that it is
+evidence rather than analysis.
+
+What a topic gets instead is a measured state: no differences, differences
+found, listen items, check flag, outline only. A flag outranks a difference,
+because a flagged topic is a validation problem before it is a narration
+question. A test asserts no verdict vocabulary appears in qa/results.py.
+
+**Judgment stays manual.** The page hands over the packet and names the prompt
+to use with it. Automating that is render.py, deliberately a separate task.
+
+**Two detectors on one site are marked, not deduplicated.** Alignment and the
+watchlist are independent, so when both land on the same timestamp that is a
+reason to listen there first. On Course 11, six of eleven listen items are
+corroborated that way. Collapsing them into one row would throw away the
+strongest signal in the list.
+
+**One home for telemetry.** Device, model, quantization, thread count, measured
+decode rate and per topic decode times were showing in the live run view and
+would have appeared again in the stats panel. The same numbers in two places
+drift, and a progress view is not where anyone reads telemetry. The live view
+now shows only what a person waiting needs: topics decoded of total, time
+remaining, and results as they arrive. Everything else lives in the stats
+panel, off by default, one click away on the Results tab.
+
+**Memory is reported as machine information and labelled as such.** Total and
+available system RAM, probed at display time, because the question people
+actually ask is whether large-v3 will fit. Peak memory during a decode is not
+measured anywhere, and the panel says so rather than letting these numbers be
+read as describing the run.
+
+Everything else in the panel was already recorded by a stage. Nothing is
+computed for the display.
