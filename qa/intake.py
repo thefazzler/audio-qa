@@ -33,9 +33,7 @@ from .ingest import MEDIA_SUFFIXES, sniff_container
 from .library import course_path, is_ingested, library_root
 from .new_course import Delivery, parse_delivery_name, render_course_yaml
 from .script_source import (
-    DOCX_BUS,
     FREEFORM,
-    NONE,
     OUTLINE,
     PPTX,
     SOURCE_LABEL,
