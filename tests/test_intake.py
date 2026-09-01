@@ -541,3 +541,72 @@ def test_confirmed_outline_topics_replace_the_todo(tmp_path):
     )
     assert "TODO" not in text.split("unscripted_topics")[0].split("# Topics whose")[-1]
     assert yaml.safe_load(text)["unscripted_topics"] == ["12"]
+
+
+# ---------------------------------------------------------------------------
+# ASR settings identity
+# ---------------------------------------------------------------------------
+
+def test_device_is_excluded_from_the_asr_fingerprint():
+    """Switching CPU to GPU must not throw away cached transcripts.
+
+    Same audio, same engine, same precision means the same transcript. A
+    machine that merely gained a graphics card should not owe half an hour of
+    decoding.
+    """
+    from qa.transcribe import ASRSettings
+
+    cpu = ASRSettings(device="cpu")
+    gpu = ASRSettings(device="cuda")
+    assert cpu.device != gpu.device
+    assert cpu.fingerprint() == gpu.fingerprint()
+
+
+def test_compute_type_is_included_in_the_asr_fingerprint():
+    """The nuance: precision is a different numerical path, so it re-decodes."""
+    from qa.transcribe import ASRSettings
+
+    int8 = ASRSettings(device="cuda", compute_type="int8")
+    half = ASRSettings(device="cuda", compute_type="float16")
+    assert int8.fingerprint() != half.fingerprint()
+
+
+def test_model_and_beam_and_vad_still_invalidate():
+    from qa.transcribe import ASRSettings
+
+    base = ASRSettings()
+    assert base.fingerprint() != ASRSettings(model="medium").fingerprint()
+    assert base.fingerprint() != ASRSettings(beam_size=1).fingerprint()
+    assert base.fingerprint() != ASRSettings(vad=False).fingerprint()
+    assert base.fingerprint() != ASRSettings(language=None).fingerprint()
+
+
+def test_changing_only_the_device_leaves_a_transcript_current(tmp_path):
+    """The rule the fingerprint comment exists to protect."""
+    from qa.transcribe import ASRSettings, transcript_is_current
+
+    transcript = tmp_path / "transcript_01.json"
+    transcript.write_text("{}", encoding="utf-8")
+    cpu = ASRSettings(device="cpu")
+    gpu = ASRSettings(device="cuda")
+    prior = {"source_sha256": "abc123", "fingerprint": cpu.fingerprint()}
+
+    assert transcript_is_current(prior, "abc123", cpu.fingerprint(), transcript)
+    assert transcript_is_current(prior, "abc123", gpu.fingerprint(), transcript)
+
+
+def test_changing_the_audio_or_the_precision_makes_it_stale(tmp_path):
+    from qa.transcribe import ASRSettings, transcript_is_current
+
+    transcript = tmp_path / "transcript_01.json"
+    transcript.write_text("{}", encoding="utf-8")
+    cpu = ASRSettings(device="cpu")
+    half = ASRSettings(device="cuda", compute_type="float16")
+    prior = {"source_sha256": "abc123", "fingerprint": cpu.fingerprint()}
+
+    assert not transcript_is_current(prior, "different", cpu.fingerprint(), transcript)
+    assert not transcript_is_current(prior, "abc123", half.fingerprint(), transcript)
+    assert not transcript_is_current(None, "abc123", cpu.fingerprint(), transcript)
+    assert not transcript_is_current(
+        prior, "abc123", cpu.fingerprint(), tmp_path / "absent.json"
+    )

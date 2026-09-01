@@ -125,6 +125,21 @@ Requires the `script` stage to have run: `qa-run <course_dir> --stage script`.
 
 ---
 
+## Runs
+
+Starting a course from the web interface runs it as a separate process with an
+id. Closing the tab, or the whole app, does not stop it. Come back to the Runs
+tab and the run is still there; so is anyone else who opens the app.
+
+While it runs you see the topic being transcribed, this machine's measured
+decode rate, and an estimate of the time left computed from that rate rather
+than from any assumption. Each topic's coverage and difference count appear as
+that topic finishes, so early topics can be read while later ones are still
+decoding.
+
+Only one run per course at a time. Two would overwrite each other's
+intermediates.
+
 ## Re-running a course
 
 Every stage runs every time. The cheap stages cost about six seconds together;

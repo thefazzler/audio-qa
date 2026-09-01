@@ -41,6 +41,7 @@ def _init_state() -> None:
     st.session_state.setdefault("paths", [])
     st.session_state.setdefault("result", None)
     st.session_state.setdefault("removed", None)
+    st.session_state.setdefault("watching", None)
 
 
 @st.cache_data(show_spinner=False)
@@ -321,10 +322,20 @@ def _show_result(result) -> None:
         )
 
     st.subheader("Next")
-    st.write(
-        "The course is in the library and ready to run. Running it is the next "
-        "step and is not wired into this page yet."
-    )
+    st.write("The course is in the library and ready to run.")
+    if st.button("Run it now", type="primary"):
+        from qa.jobs import submit
+        from qa.device import default_device, effective_device
+
+        used, _ = effective_device(default_device())
+        try:
+            status = submit(result.course_dir, {"device": used}, None)
+        except QAError as exc:
+            st.error(str(exc))
+        else:
+            st.session_state.watching = status.id
+            st.success(f"Run {status.id} started. Open the Runs tab to watch it.")
+    st.caption("Or from a terminal:")
     st.code(f"qa-run {result.course_dir}", language="bash")
 
     st.divider()
@@ -354,6 +365,19 @@ def main() -> None:
     )
     _sidebar()
 
+    intake_tab, runs_tab = st.tabs(["Intake", "Runs"])
+    with runs_tab:
+        from qa.web.run_view import start_panel, watch_panel
+
+        start_panel()
+        st.divider()
+        watch_panel()
+
+    with intake_tab:
+        _intake()
+
+
+def _intake() -> None:
     _choose_files()
 
     paths = st.session_state.paths

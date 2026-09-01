@@ -506,3 +506,65 @@ travelling through an upload on a machine that already holds the file. The
 Browse button opens the operating system's dialog in a short lived subprocess,
 because a Tk main loop inside a web server's worker thread hangs on some
 platforms. Pasting paths is always available as a fallback.
+
+## D19. Detached runs, and progress that tells the truth
+
+**A run is a separate process.** Not a thread. A thread inside the web server
+dies when the server restarts and is awkward to survive a tab closing; a
+subprocess survives both. Its status is a JSON record any process can read, so
+a second person can watch a run they did not start, and the CLI is unaffected.
+
+**Progress is read out of the pipeline's own outputs.** A watcher polls
+`qa_work/transcript_<topic>.json`, each of which already carries its decode
+time and audio duration. Nothing in the pipeline was instrumented to make this
+work, so the engine stays free of reporting code.
+
+**The primary bar is per topic, not per stage.** Eight stage ticks sit frozen
+for the twenty minutes transcription takes, which is the only part anyone is
+waiting for.
+
+**The ETA is measured on this machine, on this run.** Rate is total audio over
+total decode time across topics finished this run; the estimate is remaining
+audio divided by that rate, refined as each topic lands. A hardcoded rate would
+be wrong on a slower laptop today and wrong again when the GPU path arrives. A
+test asserts no invented multiplier appears in the module.
+
+**Results stream per topic.** As each transcript lands, the watcher aligns it
+by calling `qa.align.align_topic`, the same function the align stage calls, on
+the same inputs. It is a preview in timing only: the align stage still writes
+the authoritative files, and the two cannot disagree because they are one
+implementation with two callers. Without it a person waits out the whole decode
+before learning anything about topic one. A test asserts the streamed numbers
+equal the stage's.
+
+### Three bugs found by running it, not by reading it
+
+**Old transcripts counted as progress.** The first real run showed ten of ten
+topics complete before decoding started, and an estimate of zero seconds while
+twenty minutes of work remained, because transcripts from a previous run were
+on disk. That is precisely the false comfort per topic progress exists to
+prevent. File age against the job's start now separates work this run did from
+work it is reusing, and the two are counted and displayed separately: "10 of 10
+transcribed" on a run that decoded nothing is true and useless.
+
+**A re-decoded topic was invisible.** Once a topic was marked cached and
+aligned, the watcher never looked at its file again, so a forced run that spent
+74 seconds decoding reported that it had decoded nothing. The watcher now
+re-reads whenever a file's mtime changes.
+
+**Two runs on one course destroyed each other.** Starting a second run while
+one was in progress had both writing the same `qa_work` intermediates, each
+invalidating the other's hashes, so both re-transcribed the entire course and
+neither finished. Submission now refuses a course that already has an active
+run. A record still claiming to be running after two minutes of silence is
+treated as abandoned rather than blocking forever, since its process is gone.
+
+None of the three would have been caught by the unit tests as written. All
+three have regression tests now.
+
+### A note on writing these
+
+Three separate edits to this codebase silently did nothing this session,
+because a string replace whose pattern did not match is a no-op. One of them
+looked like a logic bug for several minutes. Bulk edits now assert that the
+pattern was found before writing.

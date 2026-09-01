@@ -19,6 +19,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Protocol, Sequence
 
+from .device import effective_device
 from .util import QAError, read_json, rel, write_json
 
 DEFAULT_MODEL = "large-v3"
@@ -93,9 +94,30 @@ class ASRSettings:
     beam_size: int = 5
     language: str | None = "en"
     vad: bool = True
+    # Carried so a run records what it was asked for, and excluded from the
+    # fingerprint on purpose; see fingerprint() below.
+    device: str = "cpu"
 
     def fingerprint(self) -> str:
-        """Settings identity, so a changed model invalidates old transcripts."""
+        """Settings identity, so a changed model invalidates old transcripts.
+
+        Device is deliberately absent from this string. The same audio through
+        the same engine at the same precision produces the same transcript on
+        CPU or GPU, so switching device must never force a re-decode. Someone
+        who runs a course on CPU and later re-runs it on a machine with a GPU
+        should get their cached transcripts back, not thirty minutes of work
+        they have already paid for.
+
+        The nuance worth keeping straight: compute_type IS in the fingerprint.
+        A GPU run at float16 is a different numerical path from an int8 run and
+        can legitimately differ in what it hears, so changing precision does
+        re-decode, correctly. Device alone never does.
+
+        If anyone is ever tempted to add device here because "the GPU path is
+        new and we should be safe", that is the mistake this comment exists to
+        prevent: it would throw away every cached transcript on a machine that
+        merely gained a graphics card.
+        """
         return (
             f"{self.model}/{self.compute_type}/beam{self.beam_size}/"
             f"vad{int(self.vad)}/lang{self.language or 'auto'}"
@@ -368,6 +390,23 @@ def build_engine(settings: ASRSettings) -> Engine:
 # Stage entry point
 # ---------------------------------------------------------------------------
 
+def transcript_is_current(
+    prior: dict | None, source_sha256: str, fingerprint: str, path: Path
+) -> bool:
+    """Whether a topic's cached transcript still stands.
+
+    Three conditions, all necessary: a previous run recorded this topic, the
+    audio has not changed, and the ASR settings that matter have not changed.
+    Device is not among them, by design; see ASRSettings.fingerprint.
+    """
+    if prior is None or not path.exists():
+        return False
+    return (
+        prior.get("source_sha256") == source_sha256
+        and prior.get("fingerprint") == fingerprint
+    )
+
+
 def settings_from_course(cfg, overrides: dict | None = None) -> ASRSettings:
     """ASR settings from course.yaml's optional asr block, then CLI overrides."""
     import os
@@ -386,6 +425,10 @@ def settings_from_course(cfg, overrides: dict | None = None) -> ASRSettings:
         beam_size=int(raw.get("beam_size", 5)),
         language=raw.get("language", "en"),
         vad=bool(raw.get("vad", True)),
+        # What will actually run, not what was asked for. Recording a
+        # requested "cuda" on a build that decodes on CPU would put a false
+        # claim in every transcript's settings block.
+        device=effective_device(str(raw.get("device", "cpu")))[0],
     )
 
 
@@ -439,11 +482,8 @@ def run_transcribe(
             continue
         out_path = cfg.qa_work / f"transcript_{topic}.json"
         prior = previous.get(topic)
-        current = (
-            prior is not None
-            and prior.get("source_sha256") == entry["source_sha256"]
-            and prior.get("fingerprint") == settings.fingerprint()
-            and out_path.exists()
+        current = transcript_is_current(
+            prior, entry["source_sha256"], settings.fingerprint(), out_path
         )
         if current and not force:
             rows.append({**prior, "status": "current"})
