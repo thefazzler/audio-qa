@@ -639,6 +639,16 @@ computed for the display.
 the model, the compute type, the beam size, the VAD setting and the language.
 It deliberately does not carry the device.
 
+**Correction, added after D23 measured this.** The premise below is false. A
+GPU decode and a CPU decode at the same precision agree on about 99.4 percent
+of tokens, not all of them, and produce different discrepancy counts. The rule
+that device stays out of the fingerprint still stands, but for a different and
+weaker reason: re-decoding a whole course because someone changed machines
+costs half an hour and buys a sub-one-percent difference that the listen list
+and the judgment step already handle. It is a cost decision now, not an
+identity claim. Anyone comparing two runs across devices should expect small
+differences and should not read them as a change in the audio.
+
 **Why device is out.** The same audio through the same engine at the same
 precision produces the same transcript on CPU or GPU. Device affects speed, not
 results. Someone who runs a course on CPU and later re-runs it on a machine
@@ -715,6 +725,13 @@ It never recommends uninstalling the old toolkit, because CUDA versions coexist
 and something else on the machine may depend on it; removing an orphan is noted
 as the user's own call. GPU is optional in every state and never blocks setup.
 
+**Superseded in part by D23.** The reading below was itself too optimistic. The
+probe asked ctranslate2 to enumerate devices and to list compute types, both of
+which succeed on a machine with no cuBLAS and no cuDNN, so this row reported OK
+on a laptop where a real decode then failed on the first kernel. The probe now
+also checks that the CUDA support libraries can actually be loaded. What
+follows was true about the toolkit and wrong about usability.
+
 **The premise about this machine was wrong, and the correction matters.** The
 task described a desktop with a stale CUDA 11.0 toolkit on PATH that
 ctranslate2 4.x cannot use, and set that up as the live fixture for this row.
@@ -736,3 +753,128 @@ prohibition rather than advice. That is a weaker proof than a live failure
 would have been, and it is the strongest available here. If a machine with the
 CUDA 11 situation turns up, run `qa-setup --check` on it: that is the
 confirmation still outstanding.
+
+## D23. The device selector, and what measuring it actually showed
+
+The web interface had a device selector that probed honestly and then did
+nothing: transcription ran on CPU whatever was chosen. It now decodes where it
+was told to, on the CLI as `--device {cpu,cuda,auto}` and in the interface,
+built from the same settings so the two front doors stay one engine. Precision
+follows the device, float16 on a card that supports it and int8 on CPU, and the
+precision that actually ran is recorded because per D21 it is in the cache key.
+
+### Falling back without losing the run
+
+The probe catches a GPU that cannot work. It cannot catch one that works until
+it is asked to do something, and that case turned up live during this work: on
+this laptop the model loaded on CUDA and the first kernel failed with
+`cublas64_12.dll is not found`.
+
+So a GPU failure during a topic falls back to CPU, finishes that topic, and
+finishes the course on CPU. It does not retry the GPU: thrashing between
+devices is how a run ends up slower than either device alone. The GPU model is
+released first, because the usual reason for the failure is that the card has
+just run out of memory.
+
+The fallback is recorded in the transcripts index, the job status, the stats
+panel and the packet header, which reads "requested cuda, decoded on cpu from
+topic 03 after: <reason>". A silent fallback would be a lie about what produced
+the findings, which is worse than the failure it hides.
+
+### The equivalence claim was wrong, and the measurement says so
+
+The interface and D21 both claimed device affects speed and not results. That
+had never been measured. It has now, on Course 11, from a forced clean state
+each time.
+
+    run                     decode      rate     discrepancies  coverage
+    CPU int8               32.9 min    2.30x          29         99.50%
+    GPU float16             7.8 min    9.67x          33         99.35%
+    GPU int8                9.9 min    7.67x          32         99.48%
+
+    CPU int8 vs GPU float16:  99.328% token agreement, 6 of 13 topics identical
+    CPU int8 vs GPU int8:     99.418% token agreement, 4 of 13 topics identical
+
+**The claim does not hold.** Nor is it only a precision effect: the control run,
+GPU at int8, holds precision constant and still disagrees with CPU int8 on nine
+of thirteen topics. The device itself changes the output.
+
+What changed, concretely. GPU float16 found a whole-sentence deletion in topic
+02 that CPU did not, and two extra substitutions in topic 08. CPU found four
+differences in topic 09 that GPU did not. The watchlist saw SIEM misheard at
+three sites on CPU and four on GPU, with topic 11 reading "some" at p 0.282 on
+CPU and "SIM" at p 0.163 plus another "SIM." at p 0.994 on GPU. Check flags were
+identical: topic 01 only, on every run.
+
+Two notes on reading those numbers honestly. The differences are small in
+aggregate, about half a percent of tokens, and they are real rather than noise
+in the metric: they change the discrepancy count and the listen list. And the
+first metric I wrote, a positional word-by-word overlap, reported 74 percent
+and was wrong; one inserted word shifts every later position. The alignment
+based figure above is the honest one.
+
+So the wording everywhere is now "device may affect decode precision; findings
+are re-verified", carried in one constant, `qa.device.DEVICE_NOTE`, so it
+cannot drift between pages. The stronger sentence is not recoverable by
+argument; it was tested and it failed.
+
+**The speedup is 4.2x at float16 and 3.3x at int8** on this laptop, an RTX
+3060. A 75.7 minute course decodes in 7.8 minutes rather than 32.9. That is the
+first real number behind any "handful of minutes" expectation.
+
+### The pip remediation did not work until it was made to
+
+D22 promised that `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` land in the
+virtual environment and are "found ahead of the older libraries". Installing
+them did not fix the decode. The wheels put their libraries inside
+site-packages, and `os.add_dll_directory` only helps loaders that pass the
+search flags; ctranslate2 loads cuBLAS by bare name, which resolves against
+PATH. Both are needed. `enable_bundled_cuda` now does both and is called before
+any CUDA model is loaded. Without it the remediation installs exactly the right
+files and the run still dies on the first kernel, which is the most
+frustrating possible outcome for the person following the instructions.
+
+## D24. The four CUDA states, and which have been seen live
+
+The selector is only proven "for anyone" when each state has been seen on real
+hardware rather than constructed in a test. Tracking that honestly, because an
+injected pass is weaker evidence than a live one and the difference is easy to
+forget.
+
+| State | Status | What confirmed it, or what would |
+|---|---|---|
+| CUDA OK | **Confirmed live** on this laptop, RTX 3060, driver 616.56, after installing `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` into the venv. A full Course 11 decode ran on GPU at 9.67x realtime. | Done. |
+| GPU PRESENT BUT NOT USABLE | **Confirmed live** on this same laptop before that install: the card enumerated, compute types listed, and the decode failed with `cublas64_12.dll is not found`. This is what prompted the probe to start checking library loadability. | Done, and it was found by running rather than by reasoning. |
+| VERSION MISMATCH | **Injection only.** No machine here has an old CUDA toolkit. | `qa-setup --check` on the owner's desktop with its stale CUDA 11.0, then the check's own remediation, then a green rerun. |
+| NO GPU | **Injection only.** Every machine here has a card. | `qa-setup --check` on a CPU-only machine, then one short run: the selector should show GPU greyed out with a reason, and the run should complete on CPU with no user action. **This is the state most contributors will actually be in, so it is the most valuable one left to see live.** |
+
+Two of the four are now live, and one of those two was not in the original plan
+at all: the "present but not usable" state existed on the development machine
+the whole time and was being reported as OK.
+
+## D25. What the device change did to the known answer tests
+
+Switching the default to `auto`, which selects GPU on this machine, re-decoded
+Course 10 and gave the golden tests their first cross-device workout. Of about
+twenty five assertions, **exactly one changed**, and it was not a finding.
+
+Listen item L7 is still reported, at the same timestamp, with the same script
+text and the same transcript text, as the same substitution. Its ASR confidence
+moved from 0.845 on CPU int8 to 0.923 on GPU float16.
+
+Everything that carries meaning survived: L5 still answers that file 01 does
+not end with the Topic 10 teaser, the tail still matches on every scripted
+topic, there are still no deletions anywhere, coverage is still above 99
+percent on every topic, the auto mapper still reproduces the slide map, and the
+audio conventions are unchanged.
+
+The test now asserts what the claim actually is, that the site is well clear of
+the listen item floor and therefore a corroborated finding rather than an
+unsure decode, rather than pinning a number that depends on which chip ran it.
+
+This is the most useful single result in this whole piece of work. D23 shows
+the two devices disagree on about half a percent of tokens; D25 shows what that
+does to conclusions, which is almost nothing. Findings are robust to the device;
+the numbers underneath them are not, and any future test that pins a confidence,
+a word count or a coverage figure to three decimal places will break the first
+time someone runs it on other hardware.

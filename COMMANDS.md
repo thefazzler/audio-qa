@@ -186,6 +186,32 @@ in that order:
   thread count, measured decode rate, per topic decode times, quality signals
   and the measured audio conventions. Telemetry lives here and nowhere else.
 
+## Choosing a device
+
+    qa-run <course> --device auto     the fastest device that works (default)
+    qa-run <course> --device cuda     decode on the GPU
+    qa-run <course> --device cpu      decode on the CPU
+
+The web interface offers the same choice and builds the same settings.
+
+Measured on this project's laptop, an RTX 3060, on a 75.7 minute course:
+
+    CPU int8      32.9 min decode    2.30x realtime
+    GPU float16    7.8 min decode    9.67x realtime    4.2x faster
+    GPU int8       9.9 min decode    7.67x realtime
+
+Device may affect decode precision; findings are re-verified. The two devices
+agree on about 99.4 percent of tokens and produce slightly different
+discrepancy counts, so a GPU run is not a bit for bit reproduction of a CPU
+run. See D23 for exactly what differed.
+
+If a GPU decode fails part way through, the run finishes on CPU rather than
+dying, and says so in the job status, the stats panel and the packet header.
+It does not retry the GPU for the rest of the course.
+
+A GPU needs `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` in the environment on
+most machines; `qa-setup --check` says so when they are missing.
+
 ## Re-running a course
 
 Every stage runs every time. The cheap stages cost about six seconds together;

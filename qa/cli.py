@@ -269,6 +269,15 @@ def main(argv: list[str] | None = None) -> int:
         help="ASR model, overriding course.yaml (large-v3, medium, ...)",
     )
     parser.add_argument(
+        "--device",
+        choices=("cpu", "cuda", "auto"),
+        help=(
+            "where to decode (default: auto, the fastest device that works). "
+            "Device affects speed; see DECISIONS.md D23 for what it does to "
+            "results."
+        ),
+    )
+    parser.add_argument(
         "--threads",
         type=int,
         help="CPU threads for the ASR decode, overriding course.yaml",
@@ -287,7 +296,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     global _ASR_OVERRIDES, _ONLY_TOPICS, _RUN_DATE
-    _ASR_OVERRIDES = {"model": args.model, "cpu_threads": args.threads}
+    _ASR_OVERRIDES = {
+        "model": args.model,
+        "cpu_threads": args.threads,
+        "device": args.device,
+    }
     _ONLY_TOPICS = args.topic
     _RUN_DATE = args.date
 

@@ -99,6 +99,9 @@ class JobStatus:
     audio_total_s: float = 0.0
     audio_done_s: float = 0.0
     rate_realtime: float | None = None
+    device_requested: str = ""
+    device_used: str = ""
+    fallback_reason: str = ""
     eta_s: float | None = None
     eta_basis: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -286,6 +289,7 @@ class ProgressWatcher:
     def scan(self) -> None:
         with self._lock:
             self._load_manifest()
+            self._load_device()
             self._load_transcripts()
             self._load_alignments()
             self._recompute_eta()
@@ -311,6 +315,34 @@ class ProgressWatcher:
             for t in manifest.get("topics", [])
         ]
         self.status.audio_total_s = manifest.get("total_duration_s", 0.0)
+
+    def _load_device(self) -> None:
+        """What device the run is actually using, including a fallback.
+
+        Read from transcripts.json rather than from the job's options, because
+        the options say what was asked for and only the pipeline knows what
+        happened.
+        """
+        path = self.work / "transcripts.json"
+        if not path.exists():
+            return
+        try:
+            data = read_json(path)
+        except (ValueError, OSError):
+            return
+        settings = data.get("settings") or {}
+        self.status.device_requested = (
+            data.get("requested_device") or settings.get("requested_device") or ""
+        )
+        self.status.device_used = data.get("device_used") or settings.get("device", "")
+        reason = data.get("fallback_reason") or ""
+        if reason and reason != self.status.fallback_reason:
+            self.status.fallback_reason = reason
+            note = (
+                f"GPU decode failed and the run continued on CPU: {reason}"
+            )
+            if note not in self.status.warnings:
+                self.status.warnings.append(note)
 
     def _load_transcripts(self) -> None:
         """Count only what this run produced, plus what it is reusing.

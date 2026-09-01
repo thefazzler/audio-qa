@@ -177,12 +177,21 @@ built because the packet format should settle across more courses first.
 Neither blocks anything. Both stay open forever if nobody knows they were
 waiting on a person rather than on code, which is why they are here.
 
-**The GPU path is wired but not enabled.** The device probe is real and the
+**Two CUDA states have never been seen on real hardware.** D24 tracks all four
+and which are live. `VERSION MISMATCH` needs the owner's desktop with its stale
+CUDA 11.0 toolkit: run `qa-setup --check` there, follow the check's own
+remediation, confirm it goes green. `NO GPU` needs any CPU-only machine, and it
+is the state most contributors will be in, so it is the most valuable one left
+to confirm: `qa-setup --check` plus one short run, with the selector showing
+GPU greyed out and the run finishing on CPU without anyone doing anything.
+
+**The GPU path is wired and enabled.** The device probe is real and the
 selector works; transcription still runs CPU only. Enabling it is a change in
-`qa/transcribe.py` alone. Before you touch the cache key, read **D21**: device
-is deliberately excluded from it, so switching device must not force a
-re-decode, while compute type is included because a different precision
-legitimately can hear differently.
+Choosing GPU decodes on GPU, about 4x faster here, and a GPU that fails under
+load falls back to CPU and says so everywhere. Before you touch the cache key,
+read **D21** and its correction: device is excluded from it, and the reason is
+now a cost decision rather than the identity claim it started as, because
+**D23** measured the two devices and they do not agree exactly.
 
 ## Who to ask
 

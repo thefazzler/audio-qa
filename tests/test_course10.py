@@ -286,8 +286,14 @@ def test_listen_item_l7_is_corroborated_not_cleared():
     assert len(site["script_says"].split()) == 2
     assert len(site["voice_said"].split()) == 2
     assert site["start_s"] == pytest.approx(144.1, abs=0.5)
-    assert site["min_confidence"] == pytest.approx(0.845, abs=0.02)
-    assert site["min_confidence"] > 0.6  # not dismissible as an unsure decode
+
+    # The confidence is device dependent and the exact value is not the claim.
+    # CPU int8 reports 0.845 here and GPU float16 reports 0.923; D23 measured
+    # that difference across the whole course. What must hold on any device is
+    # that this site is well clear of the listen item floor, because that is
+    # what makes it a corroborated finding rather than an unsure decode.
+    assert site["min_confidence"] > 0.6
+    assert site["min_confidence"] > 0.75, "a confident reading, on either device"
 
 
 # ---------------------------------------------------------------------------

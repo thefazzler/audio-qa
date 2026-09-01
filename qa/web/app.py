@@ -17,7 +17,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from qa.device import TRANSCRIBE_SUPPORTS_GPU, default_device, effective_device, probe
+from qa.device import DEVICE_NOTE, default_device, effective_device, probe
 from qa.intake import (
     IntakeForm,
     IntakeError,
@@ -255,12 +255,7 @@ def _form(selection) -> IntakeForm | None:
         )
         for missing in unusable:
             st.caption(f"{missing.label} unavailable: {missing.reason}")
-        st.caption(
-            "Device affects speed only. The same audio produces the same "
-            "transcript either way."
-        )
-        if not TRANSCRIBE_SUPPORTS_GPU:
-            st.caption("Transcription runs on CPU in this build.")
+        st.caption(DEVICE_NOTE)
 
         reviewed_by = st.text_input(
             "Reviewed by",

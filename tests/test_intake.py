@@ -215,12 +215,36 @@ def test_default_device_is_the_fastest_working_one():
     assert default_device(gpu_bad) == CPU
 
 
-def test_choosing_gpu_falls_back_to_cpu_and_says_so():
-    """Device affects speed, not results, and the note must say that."""
-    used, note = effective_device(GPU)
+def test_choosing_gpu_uses_gpu_when_it_works():
+    """The selection is honoured now; it used to be ignored."""
+    from qa.device import Device, resolve_device
+
+    devices = [Device(GPU, "GPU", True), Device(CPU, "CPU", True)]
+    assert resolve_device(GPU, devices) == (GPU, "")
+    assert resolve_device(CPU, devices) == (CPU, "")
+
+
+def test_choosing_gpu_falls_back_to_cpu_when_it_cannot_be_used():
+    """A selector that fails a run rather than running it slower is worse."""
+    from qa.device import Device, resolve_device
+
+    devices = [
+        Device(CPU, "CPU", True),
+        Device(GPU, "GPU", False, reason="no CUDA capable device was found."),
+    ]
+    used, note = resolve_device(GPU, devices)
     assert used == CPU
-    assert "identical" in note
-    assert effective_device(CPU) == (CPU, "")
+    assert "no CUDA capable device" in note, "the reason must survive"
+    assert "will use CPU" in note
+
+
+def test_auto_takes_the_fastest_device_that_works():
+    from qa.device import AUTO, Device, resolve_device
+
+    with_gpu = [Device(GPU, "GPU", True), Device(CPU, "CPU", True)]
+    without = [Device(CPU, "CPU", True), Device(GPU, "GPU", False, reason="none")]
+    assert resolve_device(AUTO, with_gpu) == (GPU, "")
+    assert resolve_device(AUTO, without) == (CPU, "")
 
 
 # ---------------------------------------------------------------------------

@@ -15,11 +15,20 @@ from __future__ import annotations
 import re
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable, Protocol, Sequence
 
-from .device import effective_device
+from .device import (
+    AUTO,
+    CPU,
+    CPU_COMPUTE,
+    GPU,
+    effective_device,
+    enable_bundled_cuda,
+    gpu_compute_type,
+    resolve_device,
+)
 from .util import QAError, read_json, rel, write_json
 
 DEFAULT_MODEL = "large-v3"
@@ -97,6 +106,9 @@ class ASRSettings:
     # Carried so a run records what it was asked for, and excluded from the
     # fingerprint on purpose; see fingerprint() below.
     device: str = "cpu"
+    # What the operator asked for, kept for the record. Never in the
+    # fingerprint; see below.
+    requested_device: str = AUTO
 
     def fingerprint(self) -> str:
         """Settings identity, so a changed model invalidates old transcripts.
@@ -292,12 +304,20 @@ def detect_anomalies(raw_segments: list[dict], words: list[Word]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class FasterWhisperEngine:
-    """CTranslate2 backed Whisper, CPU only."""
+    """CTranslate2 backed Whisper, on whichever device was chosen."""
 
     name = "faster-whisper"
 
     def __init__(self, settings: ASRSettings) -> None:
         self.settings = settings
+        self._model = None
+
+    def release(self) -> None:
+        """Drop the model so a fallback can load another on a different device.
+
+        Without this the GPU model stays resident while the CPU one loads, on
+        a card that has just said it is out of memory.
+        """
         self._model = None
 
     def _load(self):
@@ -309,9 +329,15 @@ class FasterWhisperEngine:
                     "faster-whisper is not installed.\n"
                     "  Install the ASR extra:  pip install -e .[asr]"
                 ) from exc
+            if self.settings.device == GPU:
+                # Make pip installed CUDA libraries findable before the
+                # runtime looks for them. Without this the recommended
+                # remediation installs the right files and the decode still
+                # fails; see DECISIONS.md D23.
+                enable_bundled_cuda()
             self._model = WhisperModel(
                 self.settings.model,
-                device="cpu",
+                device=self.settings.device,
                 compute_type=self.settings.compute_type,
                 cpu_threads=self.settings.cpu_threads,
             )
@@ -418,17 +444,30 @@ def settings_from_course(cfg, overrides: dict | None = None) -> ASRSettings:
     # because spilling a latency sensitive decode onto the E-cores costs more
     # than the extra cores return.
     default_threads = min(16, max(4, (os.cpu_count() or 8) * 3 // 4))
+
+    # What will actually run, not what was asked for. Recording a requested
+    # "cuda" on a machine that decoded on CPU would put a false claim in every
+    # transcript's settings block.
+    requested = str(raw.get("device", AUTO))
+    device, _ = resolve_device(requested)
+
+    # Precision follows the device unless the caller pinned one. A GPU decode
+    # at float16 and a CPU decode at int8 are different numerical paths, and
+    # per D21 that difference belongs in the fingerprint while the device
+    # itself does not.
+    compute = raw.get("compute_type")
+    if compute is None:
+        compute = gpu_compute_type() if device == GPU else CPU_COMPUTE
+
     return ASRSettings(
         model=str(raw.get("model", DEFAULT_MODEL)),
-        compute_type=str(raw.get("compute_type", "int8")),
+        compute_type=str(compute),
         cpu_threads=int(raw.get("cpu_threads", default_threads)),
         beam_size=int(raw.get("beam_size", 5)),
         language=raw.get("language", "en"),
         vad=bool(raw.get("vad", True)),
-        # What will actually run, not what was asked for. Recording a
-        # requested "cuda" on a build that decodes on CPU would put a false
-        # claim in every transcript's settings block.
-        device=effective_device(str(raw.get("device", "cpu")))[0],
+        device=device,
+        requested_device=requested,
     )
 
 
@@ -473,6 +512,12 @@ def run_transcribe(
     engine = build_engine(settings)
     rows: list[dict] = []
     warnings: list[str] = []
+    # Set once if a GPU decode fails; from then on the run is a CPU run and
+    # says so everywhere it reports.
+    fallback: str | None = None
+    fallback_after: str | None = None
+    requested_device = settings.requested_device
+    started_device = settings.device
 
     for entry in manifest["topics"]:
         topic = entry["topic"]
@@ -491,7 +536,38 @@ def run_transcribe(
             continue
 
         audio = cfg.course_dir / entry["audio_path"]
-        transcript = engine.transcribe(audio, topic)
+        try:
+            transcript = engine.transcribe(audio, topic)
+        except Exception as exc:
+            # The probe catches a GPU that cannot work at all. It cannot catch
+            # one that passes and then fails under load: out of memory on a
+            # small card, a driver fault mid decode, a library that loads and
+            # then errors on the first kernel. A person who picked the fast
+            # option must not lose their run for it.
+            if settings.device != GPU or fallback is not None:
+                raise
+            fallback = f"{type(exc).__name__}: {exc}"
+            fallback_after = topic
+            print(
+                f"        {topic}  GPU decode failed, continuing on CPU\n"
+                f"          reason: {fallback}",
+                flush=True,
+            )
+            warnings.append(
+                f"GPU decode failed on topic {topic} and the run continued on "
+                f"CPU: {fallback}"
+            )
+            release = getattr(engine, "release", None)
+            if callable(release):
+                release()
+            # The rest of the course finishes on CPU. Retrying the GPU per
+            # topic is how a run ends up slower than either device alone.
+            settings = replace(
+                settings, device=CPU, compute_type=CPU_COMPUTE
+            )
+            engine = build_engine(settings)
+            transcript = engine.transcribe(audio, topic)
+
         write_json(out_path, transcript.to_dict())
 
         speed = entry["duration_s"] / transcript.decode_seconds if transcript.decode_seconds else 0.0
@@ -528,6 +604,14 @@ def run_transcribe(
         "model": settings.model,
         "settings": asdict(settings),
         "fingerprint": settings.fingerprint(),
+        # What was asked for, what actually ran, and why they differ. A silent
+        # fallback would be a lie about what produced these transcripts, which
+        # is worse than the failure it papered over.
+        "requested_device": requested_device,
+        "device_used": settings.device,
+        "device_started": started_device,
+        "fallback_reason": fallback,
+        "fallback_after_topic": fallback_after,
         "warnings": warnings,
         "topics": rows,
     }

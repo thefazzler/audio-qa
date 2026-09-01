@@ -83,6 +83,8 @@ class Stats:
     model: str = ""
     compute_type: str = ""
     device: str = ""
+    device_requested: str = ""
+    fallback_reason: str = ""
     cpu_threads: int | None = None
     beam_size: int | None = None
     vad: bool | None = None
@@ -235,7 +237,11 @@ def build_stats(work: Path, checks: dict) -> Stats:
     stats.engine = transcripts.get("engine", "")
     stats.model = transcripts.get("model") or settings.get("model", "")
     stats.compute_type = settings.get("compute_type", "")
-    stats.device = settings.get("device", "")
+    stats.device = transcripts.get("device_used") or settings.get("device", "")
+    stats.device_requested = (
+        transcripts.get("requested_device") or settings.get("requested_device") or ""
+    )
+    stats.fallback_reason = transcripts.get("fallback_reason") or ""
     stats.cpu_threads = settings.get("cpu_threads")
     stats.beam_size = settings.get("beam_size")
     stats.vad = settings.get("vad")

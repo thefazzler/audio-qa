@@ -14,7 +14,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from qa.device import TRANSCRIBE_SUPPORTS_GPU, default_device, effective_device, probe
+from qa.device import DEVICE_NOTE, default_device, effective_device, probe
 from qa.jobs import DONE, FAILED, RUNNING, FileJobStore, JobError, submit
 from qa.library import list_courses, resolve_library
 from qa.util import QAError
@@ -82,8 +82,7 @@ def start_panel() -> None:
     used, note = effective_device(device)
     if note:
         st.caption(note)
-    elif not TRANSCRIBE_SUPPORTS_GPU:
-        st.caption("Device affects speed only, never the transcript.")
+    st.caption(DEVICE_NOTE)
 
     if st.button("Start run", type="primary"):
         try:

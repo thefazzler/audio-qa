@@ -26,6 +26,7 @@ from qa.results import (
     ResultsError,
     load_results,
 )
+from qa.device import DEVICE_NOTE
 from qa.util import QAError
 
 STATE_ICON = {
@@ -198,7 +199,7 @@ def _stats(results) -> None:
         stats = results.stats
         st.caption(
             "Everything here was recorded by the pipeline or measured about "
-            "this machine. Device affects speed, never the transcript."
+            "this machine. " + DEVICE_NOTE
         )
 
         columns = st.columns(3)
@@ -206,7 +207,13 @@ def _stats(results) -> None:
         columns[0].write(
             f"{stats.engine or 'unknown'} {stats.model or ''}\n\n"
             f"quantization `{stats.compute_type or 'unknown'}`\n\n"
-            f"device `{stats.device or 'not recorded'}`\n\n"
+            f"device `{stats.device or 'not recorded'}`"
+            + (
+                f" (requested `{stats.device_requested}`)"
+                if stats.device_requested and stats.device_requested != stats.device
+                else ""
+            )
+            + "\n\n"
             f"threads {stats.cpu_threads if stats.cpu_threads is not None else 'unknown'}\n\n"
             f"beam {stats.beam_size if stats.beam_size is not None else 'unknown'}, "
             f"VAD {'on' if stats.vad else 'off' if stats.vad is not None else 'unknown'}"
@@ -228,6 +235,13 @@ def _stats(results) -> None:
             )
         else:
             columns[2].write("memory not measurable on this platform")
+
+        if stats.fallback_reason:
+            st.warning(
+                f"This run asked for {stats.device_requested or 'a GPU'} and "
+                f"decoded on {stats.device}. GPU decode failed and the run "
+                f"continued on CPU: {stats.fallback_reason}"
+            )
 
         st.write("**Per topic decode**")
         st.dataframe(

@@ -267,9 +267,9 @@ def _major_from_path(text: str) -> int | None:
 
 def cuda_pip_remediation() -> str:
     """Additive, in the virtual environment, changing nothing system wide."""
-    return (
-        "pip install nvidia-cublas-cu12 nvidia-cudnn-cu12"
-    )
+    from .device import CUDA_PIP_PACKAGES
+
+    return CUDA_PIP_PACKAGES
 
 
 def check_cuda(probe=None, toolkit=None) -> Requirement:
@@ -303,8 +303,9 @@ def check_cuda(probe=None, toolkit=None) -> Requirement:
         return Requirement(
             "CUDA (GPU)", OK, found, required, optional=True,
             detail=(
-                "Transcription runs on CPU in this build regardless. Device "
-                "affects speed, never the transcript."
+                "Device may affect decode precision; findings are re-verified. "
+                "Measured on Course 11: about 99.4 percent token agreement "
+                "between devices. See DECISIONS.md D23."
             ),
         )
 

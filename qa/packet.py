@@ -70,6 +70,7 @@ def _header(checks: dict, manifest: dict, transcripts: dict, run_date: str) -> l
         f"| ASR engine | {transcripts['engine']} {settings['model']}, "
         f"{settings['compute_type']}, beam {settings['beam_size']}, "
         f"VAD {'on' if settings['vad'] else 'off'} |",
+        f"| Device | {_device_line(transcripts)} |",
         f"| Mean script coverage | {(summary['mean_coverage'] or 0) * 100:.2f} percent |",
         f"| Discrepancies | {summary['total_discrepancies']} |",
         f"| Listen items | {summary['total_listen_items']} |",
@@ -82,6 +83,27 @@ def _header(checks: dict, manifest: dict, transcripts: dict, run_date: str) -> l
         "",
     ]
     return lines
+
+
+def _device_line(transcripts: dict) -> str:
+    """What was asked for, what ran, and why they differ.
+
+    A run that fell back to CPU part way through must say so on the packet
+    itself. Anyone reading the findings later is entitled to know what
+    produced them.
+    """
+    requested = transcripts.get("requested_device") or "auto"
+    used = transcripts.get("device_used") or (
+        (transcripts.get("settings") or {}).get("device") or "cpu"
+    )
+    reason = transcripts.get("fallback_reason")
+    if not reason:
+        return f"requested {requested}, decoded on {used}"
+    after = transcripts.get("fallback_after_topic")
+    where = f" from topic {after}" if after else ""
+    return (
+        f"requested {requested}, decoded on {used}{where} after: {reason}"
+    )
 
 
 def _topic_map(checks: dict) -> list[str]:
