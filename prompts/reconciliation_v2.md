@@ -5,7 +5,7 @@
 | **Document** | Audio QA Reconciliation Prompt (judgment stage of the Synthetic Voice QA Pipeline) |
 | **Purpose** | Instructs Claude to judge a reconciliation packet produced by the local QA pipeline, classify defects, build a listen list, and route findings to remediation |
 | **Author / Owner** | Ryan Mount, Curriculum Design Strategist, ACIS, Skillsoft |
-| **Version** | 2.1 |
+| **Version** | 2.2 |
 | **Status** | Active |
 | **Created** | 2026-08-27 |
 | **Runs on** | Claude, latest frontier model, one run per course |
@@ -15,6 +15,7 @@
 
 **Change log**
 - 2.0: Rewritten to consume a reconciliation packet from the local pipeline instead of two LLM transcription reports. Transcriber arbitration rules (v1 rules 5 to 8) removed: there are no longer two instruments to arbitrate between. Added ASR confidence handling, the pipeline's own self-audit as an input to validate, and an explicit statement of what the new instrument cannot evidence. Defect taxonomy, verdicts, routing, edit sheet format and rules of conduct carried over unchanged.
+- 2.2: Script sources. The header row names the script document rather than assuming a storyboard, because a CGT course has no PowerPoint. The topic map carries a per-topic script state, and rule 11 says what a `no script` topic means: not even an outline exists for it, so rule 10's coverage-of-intent judgment is unavailable too. Rule 12 covers the two checks that need no script, voiced symbols and unverifiable duplications; both are listen items and neither may produce a finding on its own.
 - 2.1: WATCHLIST section added to the input inventory and to what the instrument is. Watchlist hits are listen items only; a match is orthography, not pronunciation.
 - 1.1: VENDOR EDIT SHEET FORMAT section added.
 - 1.0: Initial version.
@@ -41,11 +42,11 @@ INPUT
 
 One reconciliation packet in markdown. It contains:
 
-1. A HEADER with the course number, date, project type, storyboard filename, ASR engine and model, mean script coverage, and counts of discrepancies and listen items.
-2. A TOPIC TO SLIDE MAP. The pipeline derived this from narration continuity markers in the speaker notes and hard checked it against the number of delivered audio files. It is stated so you can sanity check it, not so you can recompute it.
+1. A HEADER with the course number, date, project type, script source (the document the script came from, which is a PowerPoint storyboard for a VENDOR course and a Word script in the BUS Writing Template for a CGT course), ASR engine and model, decode wall time and machine, mean script coverage, and counts of discrepancies and listen items.
+2. A TOPIC MAP, giving for each topic where in the script document it came from (slides, a block heading, or a filename) and its script state: verbatim, outline only, freeform document, or no script. The pipeline derived the mapping from the document's own structure and hard checked it against the number of delivered audio files. It is stated so you can sanity check it, not so you can recompute it. It may be followed by a table of blocks the extractor did not treat as topics, which is stated for the same reason.
 3. MEASURED AUDIO CONVENTIONS. The head and tail padding and inter-slide pause lengths this course uses everywhere. Silences matching the course's own habit are reported here as convention rather than as findings.
 4. A CHECKS table, one row per topic: script coverage, pace ratio, whether the final script sentence was matched, word and sentence counts on both sides, low confidence word share, and any flags.
-5. PER TOPIC EVIDENCE. For each scripted topic, a discrepancy table giving type, what the script says, what the voice said, the audio timestamp, and the minimum ASR word confidence at that site, plus a context line showing the script sentence the difference sits inside. For each unscripted topic, the storyboard outline and the full timestamped transcript.
+5. PER TOPIC EVIDENCE. For each aligned topic, a discrepancy table giving type, what the script says, what the voice said, the audio timestamp, and the minimum ASR word confidence at that site, plus a context line showing the script sentence the difference sits inside. For each unaligned topic, the outline if there is one and the full timestamped transcript. Any topic may also carry a voiced-symbols table, and an unaligned topic may carry an unverifiable-duplications table; see rule 12.
 6. A WATCHLIST table, when the learning path has one: each jargon term and acronym, how many times it occurs, how many sites matched, were low confidence, or were misheard, and the worst site's timestamp and what the ASR heard there. Every low confidence and misheard site is also listed individually as a pronunciation candidate.
 7. Audio measurements and artifact findings per topic.
 
@@ -84,6 +85,8 @@ HOW TO READ THE EVIDENCE
 8. Confidence between 0.6 and 0.9 is a judgment call. Weigh acoustic plausibility: whether the two readings could be confused by ear. Where a listener plausibly could confuse them, prefer the listen list over a finding.
 9. Segment boundary duplications that the pipeline suppressed are listed per topic as engine artifacts. They are not narration and must not appear as findings. They are shown so instrument behavior stays auditable across courses.
 10. For unscripted topics there is no script to arbitrate against, so no word level defect can be confirmed. Judge the transcript against the outline for coverage of intent, and route anything doubtful to the listen list. The low confidence word table for that topic marks where the transcript itself is least certain, which is where to listen first.
+11. **The packet's topic map states each topic's script state, and the states are not interchangeable.** `verbatim` and `freeform document` topics were aligned word for word and their evidence is a discrepancy table. An `outline only` topic is rule 10. A topic marked `no script, transcript only` has no script anywhere in the delivery, not even an outline: nothing says what it was supposed to say, so no word level defect and no coverage-of-intent judgment is available for it either. Report what the transcript contains, route anything that reads oddly to the listen list, and say plainly in the report that this topic was not checked against anything. Do not treat its silence as a pass.
+12. **Voiced symbols and unverifiable duplications are listen items, never findings.** A "voiced symbols" table means the narrator spoke the name of a symbol or URL part, which is what a synthetic voice does when it reads an identifier such as `project_plan` literally. It is grouped by term with every timestamp, because one listen settles all of the sites at once; narrators also say "underscore" deliberately, so nothing here is evidence of a defect. A "possible segment boundary duplication, unverifiable without a script" table is the same engine artifact rule 9 covers, on a topic where no script exists to prove it. Neither table may produce a Class 1 to 4 finding on its own. Both belong on the listen list, and a confirmed problem found by listening is reported as whatever class the listening shows it to be.
 
 DEFECT TAXONOMY
 
@@ -109,7 +112,7 @@ OUTPUT
 
 Produce one findings document in markdown with these sections in this order. Keep prose tight; tables carry the detail.
 
-    HEADER: course number, date, project type, storyboard filename, ASR engine and model, topic-to-slide mapping, mean coverage.
+    HEADER: course number, date, project type, script source and document, ASR engine and model, the topic map with each topic's script state, mean coverage.
     HEADLINE: two or three sentences. Overall narration fidelity, count of defects by class, count of listen items, count of showstoppers. State plainly that pronunciation and delivery were not measured.
     VERDICT TABLE: one row per topic. Columns: Topic, Verdict, Defect count by class, One-line reason.
     FINDINGS: one row per confirmed or probable defect. Columns: ID (course-topic-sequence, e.g., C10-T4-01), Topic, Class, Location (timestamp), Script says, Voice said, ASR confidence, Severity (Showstopper / Fix / Minor), Recommended fix.

@@ -346,3 +346,66 @@ def test_candidates_file_quotes_terms_that_yaml_would_read_as_booleans():
     text = render_candidates({"NO": Counter({"course11:01": 1})}, {"NO": {"course11:01"}}, "p", set())
     assert yaml.safe_load(text)[0]["term"] == "NO"
 
+
+
+# ---------------------------------------------------------------------------
+# The script author's own pronunciation guide
+# ---------------------------------------------------------------------------
+
+def _plant_guide(course: Path, guide: list[dict]) -> None:
+    """Add a Pronunciation Guide to a planted course's script.json."""
+    path = course / "qa_work" / "script.json"
+    script = json.loads(path.read_text(encoding="utf-8"))
+    script["pronunciation_guide"] = guide
+    path.write_text(json.dumps(script), encoding="utf-8")
+
+
+def test_a_guide_term_carries_its_stated_pronunciation_instead_of_todo(tmp_path):
+    """The one thing qa-terms cannot derive, when a human has written it down."""
+    path_dir = tmp_path / "spcrisc26"
+    course = _plant_course(path_dir, "course02", ["A CRISC certification."])
+    _plant_guide(course, [{"term": "CRISC", "say": "see-risk", "source": "", "topic": "1"}])
+
+    result = run_terms(path_dir)
+    written = yaml.safe_load(Path(result["path"]).read_text(encoding="utf-8"))
+    crisc = next(e for e in written if e["term"] == "CRISC")
+    assert crisc["say"] == "see-risk"
+    assert result["from_pronunciation_guide"] == ["CRISC"]
+
+
+def test_a_guide_term_is_merged_with_its_occurrences_not_listed_twice(tmp_path):
+    path_dir = tmp_path / "spcrisc26"
+    course = _plant_course(path_dir, "course02", ["A SIEM console.", "The SIEM again."])
+    _plant_guide(course, [{"term": "SIEM", "say": "seem", "source": "", "topic": "1"}])
+
+    result = run_terms(path_dir)
+    written = yaml.safe_load(Path(result["path"]).read_text(encoding="utf-8"))
+    assert [e["term"] for e in written].count("SIEM") == 1
+    siem = next(e for e in written if e["term"] == "SIEM")
+    assert siem["occurrences"] == 2
+    assert siem["say"] == "seem"
+
+
+def test_a_guide_term_that_looks_nothing_like_jargon_is_still_proposed(tmp_path):
+    """Shape is a heuristic; the author's own list is evidence."""
+    path_dir = tmp_path / "spcrisc26"
+    course = _plant_course(path_dir, "course02", ["The kettle boils."])
+    _plant_guide(course, [{"term": "Kubernetes", "say": "koo-ber-net-eez", "source": "", "topic": "2"}])
+
+    result = run_terms(path_dir)
+    written = yaml.safe_load(Path(result["path"]).read_text(encoding="utf-8"))
+    assert [e["term"] for e in written] == ["Kubernetes"]
+    assert written[0]["occurrences"] == 0
+
+
+def test_a_guide_term_already_on_the_watchlist_is_not_proposed_again(tmp_path):
+    path_dir = tmp_path / "spcrisc26"
+    course = _plant_course(path_dir, "course02", ["A CRISC certification."])
+    _plant_guide(course, [{"term": "CRISC", "say": "see-risk", "source": "", "topic": "1"}])
+    (path_dir / "watchlist.yaml").write_text(
+        '- term: "CRISC"\n  say: "see-risk"\n', encoding="utf-8"
+    )
+
+    result = run_terms(path_dir)
+    assert result["from_pronunciation_guide"] == []
+    assert not [t for t, _ in result["top"]]

@@ -11,9 +11,12 @@ Decision tree:
   soundfile cannot read .................. demux to normalized audio
   anything unrecognized .................. halt the run
 
-A mismatch between the declared project_type and the delivered formats is a
-warning, never a halt. VENDOR courses usually arrive as audio and CGT courses
-almost always as video, but neither is a rule worth stopping a run over.
+Container format is recorded and nothing is inferred from it. This module used
+to warn when a VENDOR course arrived as video, on the belief that VENDOR meant
+mp3 and CGT meant mp4. The first real deliveries disproved it: topics normally
+arrive as mp4 and need demux on both project types. The warning fired on every
+correct delivery, which is the definition of a check that has to go. See
+DECISIONS.md D26.
 """
 
 from __future__ import annotations
@@ -191,7 +194,13 @@ def demux(src: Path, dst: Path, tools: ToolInfo) -> None:
 # ---------------------------------------------------------------------------
 
 def expected_kind(project_type: str) -> str:
-    return "video" if project_type.upper() == "CGT" else "audio"
+    """What a project type used to imply about container format: nothing.
+
+    Kept as a function returning "any" so the ingest record keeps its shape and
+    a reader of an old ingest.json can see the claim was withdrawn rather than
+    silently changed. Nothing branches on it.
+    """
+    return "any"
 
 
 def _load_previous(ingest_path: Path) -> dict[str, dict]:
@@ -295,20 +304,10 @@ def run_ingest(course_dir: Path, project_type: str, force: bool = False) -> dict
             "extend qa/ingest.py with explicit handling for them."
         )
 
-    wanted = expected_kind(project_type)
-    off = [f for f in files if f["kind"] != wanted]
-    if off:
-        other = sorted({f["kind"] for f in off})
-        warnings.append(
-            f"project_type {project_type.upper()} expects {wanted} deliveries, but "
-            f"{len(off)} of {len(files)} files are {'/'.join(other)}: "
-            + ", ".join(Path(f["source"]).name for f in off)
-        )
-
     result = {
         "course_dir": course_dir.as_posix(),
         "project_type": project_type.upper(),
-        "expected_kind": wanted,
+        "expected_kind": expected_kind(project_type),
         "tools": asdict(tools),
         "counts": {
             "total": len(files),

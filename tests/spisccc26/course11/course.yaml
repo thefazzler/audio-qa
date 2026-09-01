@@ -13,3 +13,12 @@ course_code: it_spisccc26_11_enus
 # the delivered filenames (for example ["09"]). Leave it empty if every topic
 # is scripted.
 unscripted_topics: [12]
+
+# This course's script is the speaker notes of the PowerPoint storyboard,
+# which is what VENDOR implies. Stated rather than inferred; see D26.
+script_source: pptx
+
+# Per-topic script states, for the cases unscripted_topics cannot express:
+#   {script: none}                        no script at all for that topic
+#   {script: freeform, file: demo.docx}   a script in a document of its own
+topics: {}

@@ -130,7 +130,10 @@ def check_topic(
     counts = discrepancies.get("counts") or {}
     return {
         "topic": topic,
-        "slides": script_entry["slides"],
+        "slides": script_entry.get("slides"),
+        "source_ref": script_entry.get("source_ref", ""),
+        "script": script_entry.get("script")
+        or ("verbatim" if scripted else "outline"),
         "scripted": scripted,
         "duration_s": duration,
         "script_words": script_words,
@@ -149,6 +152,18 @@ def check_topic(
         "listen_items": discrepancies.get("listen_items", 0),
         "suppressed_asr_duplicates": len(
             discrepancies.get("suppressed_asr_duplicates", [])
+        ),
+        # Listen items in their own right, never defects. Counted here so the
+        # summary can say how many there are without the packet being the only
+        # place they exist.
+        "voiced_symbols": sum(
+            group["occurrences"] for group in discrepancies.get("voiced_symbols", [])
+        ),
+        "voiced_symbol_terms": [
+            group["term"] for group in discrepancies.get("voiced_symbols", [])
+        ],
+        "unverifiable_duplications": len(
+            discrepancies.get("unverifiable_duplications", [])
         ),
         "low_confidence_words": transcript.get("low_confidence_words"),
         "low_confidence_share": transcript.get("low_confidence_share"),
@@ -215,6 +230,14 @@ def run_checks(course_dir: Path, force: bool = False) -> dict:
         "total_discrepancies": sum(r["discrepancies"] for r in rows),
         "total_listen_items": sum(r["listen_items"] for r in rows),
         "total_suppressed": sum(r["suppressed_asr_duplicates"] for r in rows),
+        "total_voiced_symbols": sum(r["voiced_symbols"] for r in rows),
+        "total_unverifiable_duplications": sum(
+            r["unverifiable_duplications"] for r in rows
+        ),
+        "script_source": manifest.get("script_source", ""),
+        "script_document": manifest.get("script_document")
+        or manifest.get("storyboard")
+        or "",
         "flagged_topics": [r["topic"] for r in rows if r["flags"]],
     }
 

@@ -32,6 +32,16 @@ from qa.library import (
     resolve_library,
     set_library,
 )
+from qa.script_source import (
+    DOCX_BUS,
+    FREEFORM,
+    NONE,
+    OUTLINE,
+    SOURCE_LABEL,
+    SOURCE_SUFFIX,
+    VERBATIM,
+    default_source,
+)
 from qa.util import QAError
 
 PAGE_TITLE = "Audio QA"
@@ -103,8 +113,11 @@ def _sidebar() -> None:
 def _choose_files() -> None:
     st.subheader("1. Choose the delivered files")
     st.caption(
-        "The storyboard and every narration file, from wherever you downloaded "
-        "them. They are copied into the library; the originals are left alone."
+        "The script document and every narration file, from wherever you "
+        "downloaded them. A VENDOR course's script is the PowerPoint "
+        "storyboard; a CGT course's is the Word script in the BUS Writing "
+        "Template. They are copied into the library; the originals are left "
+        "alone."
     )
 
     from qa.web import picker
@@ -177,19 +190,16 @@ def _show_derived(selection) -> None:
     columns[0].metric("Learning path", selection.learning_path)
     columns[1].metric("Course", selection.course_number)
     columns[2].metric("Topics", len(selection.media))
-    columns[3].metric("Storyboard", "yes" if selection.storyboard else "missing")
+    columns[3].metric(
+        "Script documents", len(selection.documents) + bool(selection.storyboard)
+    )
 
     st.write(f"Course code `{selection.course_code}`")
     st.write("Topics found: " + ", ".join(f"`{t}`" for t in selection.topics))
 
-    if selection.storyboard is None:
-        st.warning(
-            "No storyboard was selected. The pipeline needs exactly one .pptx "
-            "before it can align anything."
-        )
     if selection.ignored:
         st.caption(
-            "Ignored, neither storyboard nor media: "
+            "Ignored, neither a script document nor media: "
             + ", ".join(p.name for p in selection.ignored)
         )
 
@@ -211,37 +221,92 @@ def _show_derived(selection) -> None:
 # The form
 # ---------------------------------------------------------------------------
 
+def _script_source_panel(selection, project_type: str) -> bool:
+    """Confirm which document carries the script. Detected, not asked.
+
+    Once the project type is known the answer is already in the selection: a
+    VENDOR course's script is the storyboard, a CGT course's is the Word
+    document. When the expected one is absent this says so and stops, because
+    reading the other one would align the whole course against text that is
+    not its script.
+    """
+    source = default_source(project_type)
+    document = selection.script_document(project_type)
+    if document is None:
+        st.error(
+            f"A {project_type} course's script is a {SOURCE_SUFFIX[source]} "
+            f"({SOURCE_LABEL[source]}), and exactly one was not found among the "
+            "files you chose. Add it and submit again."
+        )
+        return False
+    st.success(f"Script source: `{document.name}` ({SOURCE_LABEL[source]})")
+    return True
+
+
+def _script_controls(selection, project_type: str) -> dict[str, tuple[str, str]]:
+    """Per-topic script state, for the topics that are not verbatim.
+
+    Hidden for CGT: a BUS script is verbatim for every topic including the
+    demos, so there is nothing to choose. Shown for VENDOR, where a demo may be
+    scripted in the deck, outlined in the deck, scripted in a document of its
+    own, or not scripted anywhere.
+    """
+    if default_source(project_type) == DOCX_BUS:
+        st.caption(
+            "Every topic of a CGT course is verbatim, demos included, so there "
+            "is nothing to set per topic."
+        )
+        return {}
+
+    candidates = [p.name for p in selection.freeform_candidates(project_type)]
+    st.caption(
+        "Every topic is verbatim unless you say otherwise. Container format is "
+        "not a hint: topics normally arrive as mp4 on both project types, and a "
+        "demo may be scripted, outlined, or not scripted at all."
+    )
+    chosen: dict[str, tuple[str, str]] = {}
+    for topic in selection.topics:
+        columns = st.columns([1, 2, 3])
+        columns[0].write(f"`{topic}`")
+        state = columns[1].selectbox(
+            "script",
+            options=[VERBATIM, OUTLINE, NONE, FREEFORM],
+            key=f"script-{topic}",
+            label_visibility="collapsed",
+        )
+        document = ""
+        if state == FREEFORM:
+            if candidates:
+                document = columns[2].selectbox(
+                    "document",
+                    options=candidates,
+                    key=f"script-file-{topic}",
+                    label_visibility="collapsed",
+                )
+            else:
+                columns[2].caption(
+                    "No document was selected that could be this topic's script. "
+                    "Add a .docx or .txt above."
+                )
+        if state != VERBATIM:
+            chosen[topic] = (state, document)
+    return chosen
+
+
 def _form(selection) -> IntakeForm | None:
     st.subheader("3. The questions the filenames cannot answer")
 
+    project_type = st.selectbox(
+        "Project type",
+        options=["VENDOR", "CGT"],
+        help="VENDOR routes findings to an edit sheet; CGT to a remediation plan.",
+    )
+    ready = _script_source_panel(selection, project_type)
+
+    st.write("**Script per topic**")
+    topic_scripts = _script_controls(selection, project_type)
+
     with st.form("intake"):
-        project_type = st.selectbox(
-            "Project type",
-            options=["VENDOR", "CGT"],
-            help="VENDOR routes findings to an edit sheet; CGT to a remediation plan.",
-        )
-
-        video_topics = selection.video_topics
-        if video_topics:
-            st.caption(
-                "Topic "
-                + ", ".join(video_topics)
-                + " arrived as video, which often means a screen capture demo "
-                "whose slides carry an outline rather than a script. Being a "
-                "video and being outline-only are separate facts, so confirm it "
-                "rather than assuming."
-            )
-        unscripted = st.multiselect(
-            "Outline-only topics",
-            options=selection.topics,
-            default=[],
-            help=(
-                "Topics whose slides carry an outline rather than verbatim "
-                "narration. They are excluded from word-level alignment and "
-                "their transcripts run at full length in the packet."
-            ),
-        )
-
         devices = _devices()
         labels = {d.key: d.display for d in devices}
         usable = [d.key for d in devices if d.available]
@@ -263,17 +328,18 @@ def _form(selection) -> IntakeForm | None:
         )
         notes = st.text_area("Notes", height=80, placeholder="Optional")
 
-        submitted = st.form_submit_button("Submit", type="primary")
+        submitted = st.form_submit_button("Submit", type="primary", disabled=not ready)
 
     if not submitted:
         return None
     _ = usable
     return IntakeForm(
         project_type=project_type,
-        unscripted_topics=tuple(unscripted),
+        unscripted_topics=(),
         device=device,
         reviewed_by=reviewed_by,
         notes=notes,
+        topic_scripts=topic_scripts,
     )
 
 

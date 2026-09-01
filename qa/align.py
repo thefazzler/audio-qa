@@ -8,8 +8,12 @@ This module reports, it does not judge. Nothing here decides whether a
 difference is a defect. That is the reconciliation prompt's job, and keeping
 the line clean is what makes the packet auditable.
 
-Unscripted topics are not aligned at all. A demo outline cannot arbitrate
-word level fidelity, so the packet carries the transcript itself instead.
+Topics with no verbatim script are not aligned at all. An outline cannot
+arbitrate word level fidelity and a topic with no script has nothing to
+arbitrate against, so the packet carries the transcript itself instead. Two
+checks in `qa/transcript_checks.py` run on the transcript alone and are
+attached here, so that a topic without a script is still examined rather than
+merely transcribed.
 """
 
 from __future__ import annotations
@@ -288,11 +292,26 @@ def align_topic(
     }
 
 
-def unscripted_topic(words: Sequence[dict], segments: Sequence[dict]) -> dict:
+# What the packet says about a topic that was not aligned, per script state.
+UNALIGNED_REASON = {
+    "outline": (
+        "topic has no verbatim script; the script document carries an outline only"
+    ),
+    "none": (
+        "topic has no script at all, so there is nothing to align against and "
+        "the transcript is the whole of the evidence"
+    ),
+}
+
+
+def unscripted_topic(
+    words: Sequence[dict], segments: Sequence[dict], state: str = "outline"
+) -> dict:
     """No alignment. Carry the transcript with timestamps for a human to read."""
     return {
         "aligned": False,
-        "reason": "topic has no verbatim script; the storyboard carries an outline only",
+        "script": state,
+        "reason": UNALIGNED_REASON.get(state, UNALIGNED_REASON["outline"]),
         "transcript_tokens": len(words),
         "segments": [
             {"start_s": s["start"], "end_s": s["end"], "text": s["text"]}
@@ -304,6 +323,25 @@ def unscripted_topic(words: Sequence[dict], segments: Sequence[dict]) -> dict:
             if w.get("p") is not None and w["p"] < LOW_CONFIDENCE
         ],
     }
+
+
+def _add_transcript_checks(result: dict, transcript: dict, aligned: bool) -> None:
+    """The two checks that need no script, attached to every topic's evidence.
+
+    Voiced symbols run everywhere, because a script containing `project_plan`
+    says nothing about whether reading it out as "project underscore plan" was
+    meant. Unverifiable duplications run only where alignment did not, because
+    where it did the same candidates are already suppressed with proof.
+    """
+    from .transcript_checks import unverifiable_duplications, voiced_symbols
+
+    words = transcript.get("words") or []
+    segments = transcript.get("segments") or []
+
+    result["voiced_symbols"] = voiced_symbols(words)
+    result["unverifiable_duplications"] = (
+        [] if aligned else unverifiable_duplications(words, segments, LOW_CONFIDENCE)
+    )
 
 
 def run_align(course_dir: Path, force: bool = False) -> dict:
@@ -326,25 +364,39 @@ def run_align(course_dir: Path, force: bool = False) -> dict:
             )
         transcript = read_json(transcript_path)
 
+        state = entry.get("script") or ("verbatim" if entry["scripted"] else "outline")
         if entry["scripted"]:
             result = align_topic(
                 entry["sentences"], transcript["words"], transcript["segments"]
             )
+            result["script"] = state
         else:
-            result = unscripted_topic(transcript["words"], transcript["segments"])
+            result = unscripted_topic(
+                transcript["words"], transcript["segments"], state
+            )
+
+        _add_transcript_checks(result, transcript, aligned=entry["scripted"])
 
         result["topic"] = topic_id
-        result["slides"] = entry["slides"]
+        result["slides"] = entry.get("slides")
+        result["source_ref"] = entry.get("source_ref", "")
         write_json(cfg.qa_work / f"discrepancies_{topic_id}.json", result)
         rows.append(
             {
                 "topic": topic_id,
                 "aligned": result["aligned"],
+                "script": state,
                 "coverage": result.get("coverage"),
                 "counts": result.get("counts"),
                 "discrepancies": len(result.get("discrepancies", [])),
                 "listen_items": result.get("listen_items", 0),
                 "suppressed": len(result.get("suppressed_asr_duplicates", [])),
+                "voiced_symbols": sum(
+                    g["occurrences"] for g in result.get("voiced_symbols", [])
+                ),
+                "unverifiable_duplications": len(
+                    result.get("unverifiable_duplications", [])
+                ),
             }
         )
 

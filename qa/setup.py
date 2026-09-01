@@ -390,7 +390,7 @@ def check_packages(venv: Path | None = None) -> Requirement:
     probe = subprocess.run(
         [
             str(executable), "-c",
-            "import qa, faster_whisper, soundfile, pptx, yaml, numpy, pytest;"
+            "import qa, faster_whisper, soundfile, pptx, docx, yaml, numpy, pytest;"
             "import importlib.metadata as m;"
             "print(m.version('faster-whisper'))",
         ],

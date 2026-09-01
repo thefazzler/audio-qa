@@ -107,10 +107,18 @@ def course_dirs(target: Path) -> list[Path]:
 
 def collect(
     courses: list[Path], neighbors: bool = False
-) -> tuple[dict[str, Counter], dict[str, set[str]]]:
-    """Count candidate tokens across courses, remembering where each was seen."""
+) -> tuple[dict[str, Counter], dict[str, set[str]], dict[str, dict]]:
+    """Count candidate tokens across courses, remembering where each was seen.
+
+    Also returns the terms the script author already wrote down. A BUS document
+    carries a Pronunciation Guide, and a term in it comes with the stated
+    pronunciation attached, which is the one thing this command otherwise
+    cannot know. Those are merged with the token-shaped proposals rather than
+    listed twice.
+    """
     counts: dict[str, Counter] = defaultdict(Counter)
     seen_in: dict[str, set[str]] = defaultdict(set)
+    stated: dict[str, dict] = {}
 
     watch_keys: set[tuple[str, ...]] = set()
     if neighbors:
@@ -127,7 +135,22 @@ def collect(
                 f"  Run the script stage first: qa-run {course.as_posix()} "
                 "--stage script"
             )
-        for topic, sentence in _sentences(read_json(script_path)):
+        script = read_json(script_path)
+        for row in script.get("pronunciation_guide") or []:
+            term = (row.get("term") or "").strip()
+            if not term:
+                continue
+            entry = stated.setdefault(
+                term, {"say": "", "source": "", "seen_in": set()}
+            )
+            entry["say"] = entry["say"] or (row.get("say") or "").strip()
+            entry["source"] = entry["source"] or (row.get("source") or "").strip()
+            where = (row.get("topic") or "").strip()
+            entry["seen_in"].add(
+                f"{course.name}:{where}" if where else f"{course.name}"
+            )
+
+        for topic, sentence in _sentences(script):
             tokens = extract_tokens(sentence)
             if neighbors and watch_keys:
                 near = {normalize_phrase(t) for t in sentence.split()}
@@ -141,7 +164,7 @@ def collect(
             for token in tokens:
                 counts[token][f"{course.name}:{topic}"] += 1
                 seen_in[token].add(f"{course.name}:{topic}")
-    return counts, seen_in
+    return counts, seen_in, stated
 
 
 def render_candidates(
@@ -149,20 +172,36 @@ def render_candidates(
     seen_in: dict[str, set[str]],
     learning_path: str,
     already: set[str],
+    stated: dict[str, dict] | None = None,
 ) -> str:
     """The candidates file. Same shape as watchlist.yaml, so promotion is a copy."""
-    rows = sorted(
-        ((term, sum(c.values())) for term, c in counts.items() if term.lower() not in already),
-        key=lambda r: (-r[1], r[0].lower()),
-    )
+    stated = stated or {}
+
+    totals: dict[str, int] = {
+        term: sum(c.values())
+        for term, c in counts.items()
+        if term.lower() not in already
+    }
+    # A term the author put in a Pronunciation Guide belongs here whether or not
+    # it is shaped like an acronym, and it merges with the counted occurrences
+    # rather than appearing beside them as a second row for the same word.
+    for term in stated:
+        if term.lower() in already:
+            continue
+        totals.setdefault(term, sum(counts.get(term, Counter()).values()))
+
+    rows = sorted(totals.items(), key=lambda r: (-r[1], r[0].lower()))
     lines = [
         f"# Watchlist candidates for the {learning_path} learning path.",
-        "# Proposed by qa-terms from the storyboard scripts. This file is never",
+        "# Proposed by qa-terms from the course scripts. This file is never",
         "# read by the pipeline. Promote a term by copying its block into",
         f"# {WATCHLIST_NAME} and filling in say; delete the rest.",
         "#",
         "# say is left as TODO on purpose. How a term should be pronounced is not",
-        "# derivable from a storyboard and is not guessed here.",
+        "# derivable from a script and is not guessed here. The one exception is",
+        "# a term the author put in the script document's Pronunciation Guide:",
+        "# there the stated pronunciation is carried through, because a human",
+        "# wrote it down.",
         "",
     ]
     if not rows:
@@ -170,11 +209,21 @@ def render_candidates(
         return "\n".join(lines) + "\n"
 
     for term, total in rows:
-        where = ", ".join(sorted(seen_in[term]))
+        guide = stated.get(term, {})
+        where = ", ".join(
+            sorted(set(seen_in.get(term, set())) | set(guide.get("seen_in", ())))
+        )
+        say = (guide.get("say") or "").strip()
         lines += [
             f'- term: "{term}"',
             f'  expect: "{term}"',
-            "  say: TODO",
+            f'  say: "{say}"' if say else "  say: TODO",
+        ]
+        if guide:
+            lines.append("  # listed in the script document's Pronunciation Guide")
+            if guide.get("source"):
+                lines.append(f'  source: "{guide["source"]}"')
+        lines += [
             f"  occurrences: {total}",
             f'  seen_in: "{where}"',
             "",
@@ -186,7 +235,7 @@ def run_terms(target: Path, neighbors: bool = False) -> dict:
     """Write the candidates file for a course or a learning path."""
     courses = course_dirs(target)
     path_dir = courses[0].parent
-    counts, seen_in = collect(courses, neighbors=neighbors)
+    counts, seen_in, stated = collect(courses, neighbors=neighbors)
 
     watchlist = path_dir / WATCHLIST_NAME
     already: set[str] = set()
@@ -194,18 +243,25 @@ def run_terms(target: Path, neighbors: bool = False) -> dict:
         already = {w.term.lower() for w in load_watchlist(watchlist)}
 
     out_path = path_dir / CANDIDATES_NAME
-    text = render_candidates(counts, seen_in, path_dir.name, already)
+    text = render_candidates(counts, seen_in, path_dir.name, already, stated)
     out_path.write_text(text, encoding="utf-8")
 
-    proposed = [t for t in counts if t.lower() not in already]
+    proposed = [
+        t
+        for t in dict.fromkeys(list(counts) + list(stated))
+        if t.lower() not in already
+    ]
     return {
         "path": out_path.as_posix(),
         "learning_path": path_dir.name,
         "courses": [c.name for c in courses],
         "candidates": len(proposed),
         "already_listed": len(already & {t.lower() for t in counts}),
+        "from_pronunciation_guide": sorted(
+            t for t in stated if t.lower() not in already
+        ),
         "top": sorted(
-            ((t, sum(counts[t].values())) for t in proposed),
+            ((t, sum(counts.get(t, Counter()).values())) for t in proposed),
             key=lambda r: (-r[1], r[0].lower()),
         ),
     }

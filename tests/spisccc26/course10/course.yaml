@@ -10,3 +10,10 @@ course_code: it_spisccc26_10_enus
 # NOTE: the manual findings report calls this topic "09_01"; the delivered
 # file is named _09.mp4, so the pipeline topic id is "09".
 unscripted_topics: ["09"]
+
+# This course's script is the speaker notes of the PowerPoint storyboard,
+# which is what VENDOR implies. Stated rather than inferred; see D26.
+script_source: pptx
+
+# No topic needs a state that unscripted_topics cannot express.
+topics: {}

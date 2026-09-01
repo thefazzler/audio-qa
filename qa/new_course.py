@@ -136,6 +136,12 @@ course_number: "{number}"
 project_type: {project_type}
 course_code: {code}
 
+# Where this course's script lives. A VENDOR course carries it in the speaker
+# notes of a PowerPoint storyboard (pptx); a CGT course has no PowerPoint at
+# all and carries it in a Word document in the BUS Writing Template (docx_bus).
+# Derived from project_type; change it only if this course is unusual.
+script_source: {script_source}
+
 # Topics whose slides carry an outline rather than verbatim narration, such as
 # screen-capture demos. They are excluded from word-level alignment and their
 # transcripts run at full length in the packet.
@@ -143,15 +149,25 @@ course_code: {code}
 # the delivered filenames (for example ["09"]). Leave it empty if every topic
 # is scripted.
 unscripted_topics: []
+
+# Per-topic script states, for the cases unscripted_topics cannot express:
+#   {{script: none}}                          no script at all for that topic
+#   {{script: freeform, file: demo.docx}}     a script in a document of its own
+# Leave it empty unless a topic needs one. For example:
+#   topics: {{"09": {{script: none}}}}
+topics: {{}}
 """
 
 
 def render_course_yaml(delivery: Delivery, project_type: str) -> str:
+    from .script_source import default_source
+
     return COURSE_YAML.format(
         number=delivery.course_number,
         path=delivery.learning_path,
         project_type=project_type,
         code=delivery.course_code,
+        script_source=default_source(project_type),
     )
 
 
@@ -265,9 +281,16 @@ def main(argv: list[str] | None = None) -> int:
     print("  next, by hand:")
     print(f"    1. copy the {len(topics)} delivered files into "
           f"{(course_dir / 'audio').as_posix()}/")
-    print(f"    2. drop the storyboard .pptx into {course_dir.as_posix()}/")
-    print("    3. review the storyboard and list any outline-only topics under")
-    print("       unscripted_topics in course.yaml")
+    from .script_source import SOURCE_LABEL, SOURCE_SUFFIX, default_source
+
+    source = default_source(project_type)
+    print(
+        f"    2. drop the {SOURCE_SUFFIX[source]} script document "
+        f"({SOURCE_LABEL[source]}) into {course_dir.as_posix()}/"
+    )
+    print("    3. review the script and record any topic that is not verbatim:")
+    print("       outline-only topics under unscripted_topics, and anything with")
+    print("       no script or a script of its own under topics")
     print(f"    4. qa-run {course_dir.as_posix()}")
     return 0
 

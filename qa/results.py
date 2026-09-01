@@ -26,6 +26,7 @@ DIFFERENCES = "differences found"
 LISTEN = "listen items"
 FLAGGED = "check flag"
 UNSCRIPTED = "outline only"
+NO_SCRIPT = "no script"
 
 
 class ResultsError(QAError):
@@ -58,12 +59,14 @@ class ListenItem:
 @dataclass
 class TopicResult:
     topic: str
-    slides: list[int]
+    slides: list[int] | None
     scripted: bool
     state: str
     coverage: float | None
     differences: int
     listen_items: int
+    script: str = "verbatim"
+    source_ref: str = ""
     flags: list[str] = field(default_factory=list)
     anomalies: list[str] = field(default_factory=list)
     audio_findings: list[str] = field(default_factory=list)
@@ -141,7 +144,7 @@ def _load(work: Path, name: str) -> dict | None:
 
 def _topic_state(row: dict) -> str:
     if not row.get("scripted", True):
-        return UNSCRIPTED
+        return NO_SCRIPT if row.get("script") == "none" else UNSCRIPTED
     if row.get("flags"):
         return FLAGGED
     if row.get("discrepancies"):
@@ -179,18 +182,59 @@ def collect_listen_items(work: Path, checks: dict) -> list[ListenItem]:
                     confidence=site.get("min_confidence"),
                 )
             )
-        # An unscripted topic cannot be arbitrated on paper at all.
+        # A topic with no verbatim script cannot be arbitrated on paper at all.
         if not row.get("scripted", True):
+            outline = (row.get("script") or "outline") != "none"
             items.append(
                 ListenItem(
                     topic=topic,
-                    kind="unscripted topic",
+                    kind="outline only" if outline else "no script",
                     start_s=0.0,
                     what="the whole file",
                     detail=(
-                        "the storyboard carries an outline rather than a script, "
-                        "so no word level check is possible"
+                        "the script document carries an outline rather than a "
+                        "script, so no word level check is possible"
+                        if outline
+                        else "this topic has no script, so no word level check "
+                        "is possible and the transcript is the only evidence"
                     ),
+                )
+            )
+
+        # The two checks that need no script. Both are listen items by
+        # construction: neither can be a defect, because neither has anything
+        # to be wrong against.
+        for group in data.get("voiced_symbols", []):
+            for site in group["sites"]:
+                items.append(
+                    ListenItem(
+                        topic=topic,
+                        kind="voiced symbol",
+                        start_s=site.get("start_s"),
+                        what=f"heard {site.get('context') or group['term']!r}",
+                        detail=(
+                            f"the voice said the symbol name {group['term']!r}, "
+                            f"{group['occurrences']} time"
+                            f"{'' if group['occurrences'] == 1 else 's'} in this "
+                            "topic. Narrators do say this on purpose; one listen "
+                            "settles every site."
+                        ),
+                        confidence=site.get("confidence"),
+                    )
+                )
+        for site in data.get("unverifiable_duplications", []):
+            items.append(
+                ListenItem(
+                    topic=topic,
+                    kind="unverifiable duplication",
+                    start_s=site.get("start_s"),
+                    what=f"heard {site.get('heard')!r} twice across a segment seam",
+                    detail=(
+                        "possible segment boundary duplication. With no script "
+                        "there is no proof it is an engine artifact, so it is "
+                        "listed rather than suppressed."
+                    ),
+                    confidence=site.get("confidence"),
                 )
             )
 
@@ -313,12 +357,16 @@ def load_results(course_dir: Path) -> CourseResults:
     topics = [
         TopicResult(
             topic=row["topic"],
-            slides=row.get("slides", []),
+            slides=row.get("slides"),
             scripted=row.get("scripted", True),
             state=_topic_state(row),
             coverage=row.get("coverage"),
             differences=row.get("discrepancies", 0),
             listen_items=row.get("listen_items", 0),
+            script=row.get("script") or (
+                "verbatim" if row.get("scripted", True) else "outline"
+            ),
+            source_ref=row.get("source_ref", ""),
             flags=row.get("flags", []),
             anomalies=row.get("asr_anomalies", []),
             audio_findings=row.get("audio_findings", []),

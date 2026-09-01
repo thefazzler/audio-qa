@@ -6,6 +6,10 @@ requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
     "python-pptx>=1.0",
+    # CGT courses have no PowerPoint at all; their script is a Word document in
+    # the BUS Writing Template. Not an extra, because half the deliveries need
+    # it and a missing script parser is not a degraded mode.
+    "python-docx>=1.1",
     "soundfile>=0.12",
     "numpy>=1.26",
     "num2words>=0.5.13",

@@ -128,22 +128,47 @@ def test_the_yaml_says_nothing_about_file_formats():
         assert word not in text.lower()
 
 
-def test_scaffolded_course_loads_through_the_config_stage(tmp_path):
+@pytest.mark.parametrize(
+    "project_type,document",
+    [("VENDOR", "it_spisccc26_11_storyboard.pptx"), ("CGT", "it_spisccc26_11_scripts.docx")],
+)
+def test_scaffolded_course_loads_through_the_config_stage(
+    tmp_path, project_type, document
+):
     """The real check: config.py accepts what the scaffolder writes.
 
-    A storyboard has to exist for load_course_yaml to return, which is the
+    A script document has to exist for load_course_yaml to return, which is the
     human step the scaffolder deliberately leaves undone; plant an empty one.
+    Which document counts depends on the project type, because a CGT course has
+    no PowerPoint at all.
     """
+    delivery = parse_delivery_name("it_spisccc26_11_enus_01.mp3")
+    course_dir = scaffold(delivery, tmp_path, project_type)
+    (course_dir / document).write_bytes(b"")
+
+    cfg = load_course_yaml(course_dir)
+    assert cfg.course_number == "11"
+    assert cfg.project_type == project_type
+    assert cfg.course_code == "it_spisccc26_11_enus"
+    assert cfg.unscripted_topics == ()
+    assert cfg.slide_map == {}
+    assert cfg.script_document.name == document
+
+
+def test_a_cgt_course_with_only_a_storyboard_stops_rather_than_guessing(tmp_path):
+    """The expected document type is absent, so say so; do not read the wrong one.
+
+    A CGT course's script is a Word document. Falling back to a stray pptx
+    would align the whole course against something that is not its script.
+    """
+    from qa.util import ConfigError
+
     delivery = parse_delivery_name("it_spisccc26_11_enus_01.mp3")
     course_dir = scaffold(delivery, tmp_path, "CGT")
     (course_dir / "it_spisccc26_11_storyboard.pptx").write_bytes(b"")
 
-    cfg = load_course_yaml(course_dir)
-    assert cfg.course_number == "11"
-    assert cfg.project_type == "CGT"
-    assert cfg.course_code == "it_spisccc26_11_enus"
-    assert cfg.unscripted_topics == ()
-    assert cfg.slide_map == {}
+    with pytest.raises(ConfigError, match="expects exactly one .docx"):
+        load_course_yaml(course_dir)
 
 
 def test_generated_yaml_matches_course_10s_key_set():

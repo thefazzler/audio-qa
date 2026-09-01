@@ -254,7 +254,7 @@ def test_an_unscripted_topic_is_a_listen_item_in_itself(course):
     checks = json.loads((course / "qa_work" / "checks.json").read_text(encoding="utf-8"))
     items = collect_listen_items(course / "qa_work", checks)
     assert len(items) == 1
-    assert items[0].kind == "unscripted topic"
+    assert items[0].kind == "outline only"
     assert "outline" in items[0].detail
 
 

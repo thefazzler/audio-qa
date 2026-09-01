@@ -32,9 +32,26 @@ from .config import PROJECT_TYPES
 from .ingest import MEDIA_SUFFIXES, sniff_container
 from .library import course_path, is_ingested, library_root
 from .new_course import Delivery, parse_delivery_name, render_course_yaml
+from .script_source import (
+    DOCX_BUS,
+    FREEFORM,
+    NONE,
+    OUTLINE,
+    PPTX,
+    SOURCE_LABEL,
+    SOURCE_SUFFIX,
+    TOPIC_STATES,
+    VERBATIM,
+    default_source,
+)
 from .util import QAError, sha256_file
 
 STORYBOARD_SUFFIXES = {".pptx"}
+
+# Documents that are not a storyboard: a CGT course's BUS script, and the
+# occasional freeform script for one topic. Both arrive alongside the media and
+# neither is media, so both used to be silently set aside as "other".
+DOCUMENT_SUFFIXES = {".docx", ".txt"}
 
 # Where a browser drops things. Suggestions only; the app never acts on a guess.
 DOWNLOAD_HINTS = ("Downloads", "Desktop", "OneDrive/Downloads")
@@ -71,6 +88,27 @@ class Selection:
     storyboard: Path | None
     media: tuple[MediaFile, ...]
     ignored: tuple[Path, ...] = ()
+    documents: tuple[Path, ...] = ()
+
+    def script_document(self, project_type: str) -> Path | None:
+        """The document this project type's script source lives in, if present.
+
+        Detected rather than asked: a VENDOR course's script is the pptx and a
+        CGT course's is the docx, so once the project type is known the answer
+        is already in the selection. Returns None when it is not, which the
+        form turns into a stop rather than a guess.
+        """
+        source = default_source(project_type)
+        if source == PPTX:
+            return self.storyboard
+        suffix = SOURCE_SUFFIX[source]
+        found = [p for p in self.documents if p.suffix.lower() == suffix]
+        return found[0] if len(found) == 1 else None
+
+    def freeform_candidates(self, project_type: str) -> list[Path]:
+        """Documents that could be one topic's own script, not the course's."""
+        course_document = self.script_document(project_type)
+        return [p for p in self.documents if p != course_document]
 
     @property
     def topics(self) -> list[str]:
@@ -97,6 +135,8 @@ def _classify(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix in STORYBOARD_SUFFIXES:
         return "storyboard"
+    if suffix in DOCUMENT_SUFFIXES:
+        return "document"
     if suffix in MEDIA_SUFFIXES:
         return "media"
     return "other"
@@ -129,6 +169,7 @@ def read_selection(paths: list[Path] | list[str]) -> Selection:
         raise IntakeError(f"These selected files do not exist:\n  {listed}")
 
     storyboards = [p for p in chosen if _classify(p) == "storyboard"]
+    documents = tuple(sorted(p for p in chosen if _classify(p) == "document"))
     media_paths = [p for p in chosen if _classify(p) == "media"]
     ignored = tuple(p for p in chosen if _classify(p) == "other")
 
@@ -178,6 +219,7 @@ def read_selection(paths: list[Path] | list[str]) -> Selection:
         storyboard=storyboards[0] if storyboards else None,
         media=media,
         ignored=ignored,
+        documents=documents,
     )
 
 
@@ -194,6 +236,14 @@ class IntakeForm:
     device: str = "cpu"
     reviewed_by: str = ""
     notes: str = ""
+    # Topic id to (state, document name). Only topics that are not verbatim
+    # appear; outline-only topics may arrive here or in unscripted_topics.
+    topic_scripts: dict[str, tuple[str, str]] = field(default_factory=dict)
+
+    @property
+    def script_source(self) -> str:
+        """Derived from the project type, never asked for. See D26."""
+        return default_source(self.project_type)
 
     def validate(self, selection: Selection) -> None:
         if self.project_type.upper() not in PROJECT_TYPES:
@@ -210,10 +260,62 @@ class IntakeForm:
                 + "\n  Delivered topics are: "
                 + ", ".join(selection.topics)
             )
+
+        if selection.script_document(self.project_type) is None:
+            source = self.script_source
+            raise IntakeError(
+                f"A {self.project_type.upper()} course's script is a "
+                f"{SOURCE_SUFFIX[source]} ({SOURCE_LABEL[source]}), and exactly "
+                "one was not found among the selected files.\n"
+                "  Select it and submit again. This is not guessed at: reading "
+                "the wrong document would align the whole course against text "
+                "that is not its script."
+            )
+
+        for topic, (state, document) in sorted(self.topic_scripts.items()):
+            if topic not in known:
+                raise IntakeError(
+                    f"A script state was set for topic {topic}, which was not "
+                    "delivered.\n  Delivered topics are: "
+                    + ", ".join(selection.topics)
+                )
+            if state not in TOPIC_STATES:
+                allowed = ", ".join(sorted(TOPIC_STATES))
+                raise IntakeError(
+                    f"Topic {topic} has script state '{state}', which is not one "
+                    f"of {allowed}."
+                )
+            if state == FREEFORM and not document:
+                raise IntakeError(
+                    f"Topic {topic} is freeform but no script document was "
+                    "chosen for it."
+                )
+            if state == FREEFORM and document not in {
+                p.name for p in selection.freeform_candidates(self.project_type)
+            }:
+                raise IntakeError(
+                    f"Topic {topic}'s freeform script {document!r} is not among "
+                    "the selected files. Select it and submit again."
+                )
+
         if not self.reviewed_by.strip():
             raise IntakeError(
                 "Reviewed by is required, so the packet records who ran the course."
             )
+
+    def resolved_scripts(self) -> dict[str, tuple[str, str]]:
+        """Every non-verbatim topic, with the two ways of saying so merged."""
+        merged: dict[str, tuple[str, str]] = {
+            topic: (OUTLINE, "") for topic in self.unscripted_topics
+        }
+        merged.update(
+            {
+                topic: (state, document)
+                for topic, (state, document) in self.topic_scripts.items()
+                if state != VERBATIM
+            }
+        )
+        return merged
 
 
 # ---------------------------------------------------------------------------
@@ -308,21 +410,23 @@ def ingest_selection(
 
     result = IntakeResult(course_dir=course_dir, resubmission=resubmission)
 
-    if selection.storyboard is None:
-        result.warnings.append(
-            "No storyboard was selected. The pipeline needs exactly one .pptx "
-            "in the course folder before it can run."
-        )
-
     audio_dir = course_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
 
-    if selection.storyboard is not None:
-        result.copied.append(
-            _copy_verified(
-                selection.storyboard, course_dir / selection.storyboard.name
-            )
-        )
+    # The course's own script document, plus any freeform script a topic uses.
+    # Everything else that was selected but is not media stays where it is.
+    course_document = selection.script_document(form.project_type)
+    freeform = {
+        document
+        for _, (state, document) in form.resolved_scripts().items()
+        if state == FREEFORM and document
+    }
+    for document in [course_document] + [
+        p for p in selection.freeform_candidates(form.project_type) if p.name in freeform
+    ]:
+        if document is None:
+            continue
+        result.copied.append(_copy_verified(document, course_dir / document.name))
 
     for item in selection.media:
         copied = _copy_verified(item.path, audio_dir / item.name)
@@ -358,9 +462,12 @@ def render_intake_yaml(selection: Selection, form: IntakeForm) -> str:
     """
     text = render_course_yaml(selection.delivery, form.project_type.upper())
 
-    if form.unscripted_topics:
-        listed = ", ".join(f'"{t}"' for t in sorted(form.unscripted_topics))
-        text = text.replace(
+    resolved = form.resolved_scripts()
+    outline = sorted(t for t, (state, _) in resolved.items() if state == OUTLINE)
+    if outline:
+        listed = ", ".join(f'"{t}"' for t in outline)
+        text = _replace_once(
+            text,
             "# TODO: fill this in after reviewing the storyboard, using the topic ids from\n"
             "# the delivered filenames (for example [\"09\"]). Leave it empty if every topic\n"
             "# is scripted.\n"
@@ -369,12 +476,41 @@ def render_intake_yaml(selection: Selection, form: IntakeForm) -> str:
             f"unscripted_topics: [{listed}]",
         )
 
+    others = {t: v for t, v in resolved.items() if v[0] != OUTLINE}
+    if others:
+        entries = ", ".join(
+            f'"{topic}": {{script: {state}'
+            + (f", file: {document}" if document else "")
+            + "}"
+            for topic, (state, document) in sorted(others.items())
+        )
+        text = _replace_once(text, "topics: {}", "# Confirmed at intake.\n"
+                             f"topics: {{{entries}}}")
+
     trailer = ["", "# Recorded at intake."]
     if form.reviewed_by.strip():
         trailer.append(f"reviewed_by: {_yaml_scalar(form.reviewed_by.strip())}")
     if form.notes.strip():
         trailer.append(f"notes: {_yaml_scalar(form.notes.strip())}")
     return text.rstrip("\n") + "\n" + "\n".join(trailer) + "\n"
+
+
+def _replace_once(text: str, old: str, new: str) -> str:
+    """Replace, and refuse to pretend it happened when it did not.
+
+    A string replace whose pattern does not match changes nothing and reports
+    success. That silently dropped several edits during this build, and here it
+    would produce a course.yaml missing exactly the states the operator had
+    just typed in. See HANDOVER.md, "A no-op edit is not an error".
+    """
+    if old not in text:
+        raise IntakeError(
+            "Could not write the script states into course.yaml: the template "
+            f"no longer contains the block starting {old.splitlines()[0]!r}.\n"
+            "  qa/new_course.py's COURSE_YAML and qa/intake.py have drifted "
+            "apart; they have to be changed together."
+        )
+    return text.replace(old, new, 1)
 
 
 def _yaml_scalar(value: str) -> str:

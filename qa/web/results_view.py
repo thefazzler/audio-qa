@@ -22,6 +22,7 @@ from qa.results import (
     FLAGGED,
     LISTEN,
     NO_DIFFERENCES,
+    NO_SCRIPT,
     UNSCRIPTED,
     ResultsError,
     load_results,
@@ -35,11 +36,26 @@ STATE_ICON = {
     LISTEN: "listen",
     FLAGGED: "flag",
     UNSCRIPTED: "outline",
+    NO_SCRIPT: "no script",
 }
 
 
 def _percent(value: float | None) -> str:
     return f"{value * 100:.2f}%" if value is not None else "n/a"
+
+
+def _source_span(topic) -> str:
+    """Where in the script document this topic came from.
+
+    Slides for a storyboard, a block heading for a BUS document, a filename for
+    a freeform script. A CGT course has no slides at all, so a column headed
+    "slides" would be empty for every row of it.
+    """
+    slides = topic.slides
+    if slides and len(slides) == 2:
+        first, last = slides
+        return f"slides {first}" if first == last else f"slides {first}-{last}"
+    return topic.source_ref or ""
 
 
 # ---------------------------------------------------------------------------
@@ -76,10 +92,11 @@ def _checks_table(results) -> None:
         [
             {
                 "topic": t.topic,
-                "slides": f"{t.slides[0]}-{t.slides[1]}" if len(t.slides) == 2 and t.slides[0] != t.slides[1] else (str(t.slides[0]) if t.slides else ""),
+                "from": _source_span(t),
+                "script": t.script,
                 "state": STATE_ICON.get(t.state, t.state),
                 "coverage": _percent(t.coverage) if t.scripted else "n/a",
-                "differences": t.differences if t.scripted else "outline only",
+                "differences": t.differences if t.scripted else "not aligned",
                 "listen": t.listen_items or "",
                 "flags": ", ".join(t.flags),
                 "audio": ", ".join(t.audio_findings),

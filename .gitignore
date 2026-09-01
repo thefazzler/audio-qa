@@ -31,6 +31,12 @@ dist/
 *.pptx
 *.potx
 *.ppt
+# CGT courses carry their script in a Word document in the BUS Writing
+# Template, which is narration text and just as much customer material as a
+# storyboard. Tests that need one generate a synthetic document instead.
+*.docx
+*.dotx
+*.doc
 tests/*/*/audio/
 
 # Google Drive sync scratch directory

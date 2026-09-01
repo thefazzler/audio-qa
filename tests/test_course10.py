@@ -125,9 +125,15 @@ def test_mixed_delivery_is_ingested():
     assert demuxed[0]["audio_path"].endswith(".wav")
 
 
-def test_vendor_video_mismatch_warns_without_halting():
+def test_container_format_is_recorded_and_never_warned_about():
+    """The VENDOR-expects-audio warning fired on every correct delivery.
+
+    Topics normally arrive as mp4 and need demux on both project types, so the
+    container says nothing about the project type. See D26.
+    """
     ingest = load("ingest.json")
-    assert any("VENDOR" in w and "video" in w for w in ingest["warnings"])
+    assert not any("expects" in w for w in ingest["warnings"])
+    assert ingest["expected_kind"] == "any"
 
 
 def test_auto_mapper_reproduces_the_known_slide_map(script):

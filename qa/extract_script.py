@@ -1,8 +1,17 @@
-"""Module 3: storyboard script extraction and topic mapping.
+"""Module 3: script extraction and topic mapping.
 
-Pulls speaker notes out of the storyboard, decides which slide belongs to which
-topic, and splits each topic's narration into sentences with the original text
-preserved exactly.
+Pulls the narration out of the course's script document, decides which part of
+it belongs to which topic, and splits each topic's narration into sentences
+with the original text preserved exactly.
+
+The stage is a dispatcher over extractors. A VENDOR course's script is the
+speaker notes of a PowerPoint storyboard, which is what this module reads. A
+CGT course has no PowerPoint at all and carries its script in a Word document
+in the BUS Writing Template, which `qa/extract_docx.py` reads. A topic may also
+have a freeform script of its own, or none. Every extractor emits the same
+per-topic structure, so the aligner, the checks, the artifacts and the packet
+do not know or care which one ran. See `qa/script_source.py` for the
+vocabulary and DECISIONS.md D26 for why file type decides none of it.
 
 The topic mapper is the highest-risk component in the pipeline: one slide
 assigned to the wrong topic produces a block of false deletions in one topic
@@ -21,6 +30,15 @@ from pathlib import Path
 
 from pptx import Presentation
 
+from .script_source import (
+    DOCX_BUS,
+    FREEFORM,
+    NONE,
+    OUTLINE,
+    PPTX,
+    VERBATIM,
+    TopicScript,
+)
 from .util import ScriptError, read_json, split_sentences, write_json
 
 # Marker phrases that open a new topic in Skillsoft storyboard notes. Ordered
@@ -229,10 +247,19 @@ def _validate_slide_map(
 def build_script(
     storyboard: Path,
     topics: list[str],
-    unscripted: set[str],
+    unscripted: set[str] | None = None,
     slide_map: dict[str, list[int]] | None = None,
+    topic_scripts: dict[str, TopicScript] | None = None,
 ) -> dict:
-    """Extract per-topic narration from the storyboard."""
+    """Extract per-topic narration from the storyboard.
+
+    `topic_scripts` is the general form of `unscripted`, which said only
+    outline-or-not. Either may be passed; the explicit states win where both
+    speak, and a topic neither mentions is verbatim.
+    """
+    unscripted = set(unscripted or ())
+    states: dict[str, TopicScript] = {t: TopicScript(state=OUTLINE) for t in unscripted}
+    states.update(topic_scripts or {})
     slides = read_slides(storyboard)
     by_number = {s.number: s for s in slides}
 
@@ -271,17 +298,24 @@ def build_script(
                 sentences.append(sentence)
                 sentence_slides.append(slide.number)
 
-        scripted = topic not in unscripted
+        state = states.get(topic, TopicScript(state=VERBATIM))
+        span = f"{first}" if first == last else f"{first}-{last}"
         entry: dict = {
             "topic": topic,
+            "script": state.state,
             "slides": [first, last],
-            "scripted": scripted,
+            "source_ref": f"slides {span}",
+            "scripted": state.aligned,
             "slide_numbers": [s.number for s in members],
             "sentences": sentences,
             "sentence_slides": sentence_slides,
+            # Slide titles live in the deck's shapes, never in the speaker
+            # notes, so a pptx script carries no non-narration text to strip.
+            # The key is present so every extractor's output has one shape.
+            "non_narration": [],
             "word_count": sum(len(s.split()) for s in sentences),
         }
-        if not scripted:
+        if state.state == OUTLINE:
             # Demo outlines are not verbatim narration. Keep the raw text so the
             # packet can show a human what the demo was supposed to cover.
             entry["outline"] = [
@@ -293,6 +327,8 @@ def build_script(
         topic_entries.append(entry)
 
     return {
+        "script_source": PPTX,
+        "script_document": storyboard.name,
         "storyboard": storyboard.name,
         "slide_count": len(slides),
         "mapping": {
@@ -302,8 +338,100 @@ def build_script(
             ],
             "excluded_slides": excluded,
         },
+        "warnings": [],
         "topics": topic_entries,
     }
+
+
+def build_script_for_source(
+    source: str,
+    document: Path,
+    topics: list[str],
+    topic_scripts: dict[str, TopicScript],
+    course_dir: Path,
+    slide_map: dict[str, list[int]] | None = None,
+    course_code: str = "",
+) -> dict:
+    """Dispatch to the extractor for this course's script source.
+
+    The per-topic states that are not the course's own source, `freeform` and
+    `none`, are applied afterwards as an overlay, so both course-level
+    extractors get them without either knowing about the other.
+    """
+    if source == PPTX:
+        script = build_script(
+            storyboard=document,
+            topics=topics,
+            unscripted=set(),
+            slide_map=slide_map,
+            topic_scripts=topic_scripts,
+        )
+    elif source == DOCX_BUS:
+        from .extract_docx import build_script_docx_bus
+
+        script = build_script_docx_bus(
+            document_path=document,
+            topics=topics,
+            topic_scripts=topic_scripts,
+            course_code=course_code,
+        )
+    else:
+        raise ScriptError(
+            f"No extractor for script_source '{source}'. This is a course-level "
+            "source, and only pptx and docx_bus are."
+        )
+
+    _apply_topic_overlays(script, topic_scripts, course_dir)
+    return script
+
+
+def _apply_topic_overlays(
+    script: dict, topic_scripts: dict[str, TopicScript], course_dir: Path
+) -> None:
+    """Replace what the course document said for topics that overrode it.
+
+    A `freeform` topic's narration is a document of its own, so whatever the
+    storyboard had for it is not narration and is discarded. A `none` topic has
+    no script at all: its entry keeps its place in the topic map, carries no
+    sentences, and the packet shows its transcript instead. Neither is skipped,
+    because the audio was still delivered and still has to be checked.
+    """
+    from .extract_docx import build_freeform_topic
+
+    for entry in script["topics"]:
+        state = topic_scripts.get(entry["topic"])
+        if state is None:
+            continue
+        if state.state == FREEFORM:
+            replacement = build_freeform_topic(
+                entry["topic"], course_dir / state.file
+            )
+            entry.update(
+                {
+                    "script": FREEFORM,
+                    "scripted": True,
+                    "source_ref": replacement["source_ref"],
+                    "sentences": replacement["sentences"],
+                    "non_narration": [],
+                    "word_count": replacement["word_count"],
+                }
+            )
+            entry.pop("outline", None)
+            entry.pop("sentence_slides", None)
+            entry.pop("sentence_rows", None)
+        elif state.state == NONE:
+            entry.update(
+                {
+                    "script": NONE,
+                    "scripted": False,
+                    "sentences": [],
+                    "non_narration": [],
+                    "word_count": 0,
+                }
+            )
+            entry.pop("outline", None)
+            entry["sentence_slides"] = []
+            entry["sentence_rows"] = []
 
 
 def run_extract_script(course_dir: Path, force: bool = False) -> dict:
@@ -323,30 +451,39 @@ def run_extract_script(course_dir: Path, force: bool = False) -> dict:
     # cannot go stale silently; it is here to make the dependency explicit and
     # to tell the operator that the script they are aligning against is not
     # the one they aligned against yesterday. See DECISIONS.md D17.
-    storyboard_sha256 = manifest.get("storyboard_sha256")
+    document_sha256 = manifest.get("script_document_sha256") or manifest.get(
+        "storyboard_sha256"
+    )
     previous_path = cfg.qa_work / "script.json"
     changed = False
-    if previous_path.exists() and storyboard_sha256:
+    if previous_path.exists() and document_sha256:
         try:
-            previous = read_json(previous_path).get("storyboard_sha256")
-            changed = bool(previous) and previous != storyboard_sha256
+            previous = read_json(previous_path)
+            was = previous.get("script_document_sha256") or previous.get(
+                "storyboard_sha256"
+            )
+            changed = bool(was) and was != document_sha256
         except (OSError, ValueError):
             changed = False
 
-    script = build_script(
-        storyboard=cfg.course_dir / manifest["storyboard"],
+    script = build_script_for_source(
+        source=cfg.script_source,
+        document=cfg.script_document,
         topics=topics,
-        unscripted=set(cfg.unscripted_topics),
+        topic_scripts=dict(cfg.topic_scripts),
+        course_dir=cfg.course_dir,
         slide_map=cfg.slide_map or None,
+        course_code=cfg.course_code,
     )
-    script["storyboard_sha256"] = storyboard_sha256
-    script["warnings"] = (
-        [
-            "The storyboard has changed since the last run. Every topic is "
-            "aligned against the new script."
-        ]
-        if changed
-        else []
+    script["script_document_sha256"] = document_sha256
+    script["storyboard_sha256"] = (
+        document_sha256 if script.get("storyboard") else None
     )
+    if changed:
+        script.setdefault("warnings", []).insert(
+            0,
+            f"{script['script_document']} has changed since the last run. Every "
+            "topic is aligned against the new script.",
+        )
     write_json(cfg.qa_work / "script.json", script)
     return script

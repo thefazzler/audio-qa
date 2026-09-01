@@ -70,6 +70,14 @@ def _bare(token: str) -> str:
     return re.sub(r"[^\w]", "", token).lower()
 
 
+def _machine_name() -> str:
+    """This machine, for the packet's durable record of where a run happened."""
+    import platform
+
+    name = platform.node() or ""
+    return f"{name} ({platform.system()})" if name else platform.system() or "unknown"
+
+
 def boundary_duplicate_indices(
     words: Sequence[dict], segments: Sequence[dict]
 ) -> set[int]:
@@ -604,6 +612,11 @@ def run_transcribe(
         "model": settings.model,
         "settings": asdict(settings),
         "fingerprint": settings.fingerprint(),
+        # Which machine produced these transcripts. Decode speed is a property
+        # of the hardware, so a wall time on the packet means nothing without
+        # it, and "which laptop was that run on" is not answerable afterwards
+        # from anything else in the record.
+        "machine": _machine_name(),
         # What was asked for, what actually ran, and why they differ. A silent
         # fallback would be a lie about what produced these transcripts, which
         # is worse than the failure it papered over.

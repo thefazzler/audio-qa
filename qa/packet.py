@@ -65,12 +65,13 @@ def _header(checks: dict, manifest: dict, transcripts: dict, run_date: str) -> l
         f"| Course | {summary['course_number']} ({summary['course_code']}) |",
         f"| Date | {run_date} |",
         f"| Project type | {summary['project_type']} |",
-        f"| Storyboard | {manifest['storyboard']} |",
+        f"| Script source | {_script_source_line(manifest)} |",
         f"| Topics | {summary['topic_count']} |",
         f"| ASR engine | {transcripts['engine']} {settings['model']}, "
         f"{settings['compute_type']}, beam {settings['beam_size']}, "
         f"VAD {'on' if settings['vad'] else 'off'} |",
         f"| Device | {_device_line(transcripts)} |",
+        f"| Decode | {_decode_line(transcripts)} |",
         f"| Mean script coverage | {(summary['mean_coverage'] or 0) * 100:.2f} percent |",
         f"| Discrepancies | {summary['total_discrepancies']} |",
         f"| Listen items | {summary['total_listen_items']} |",
@@ -83,6 +84,42 @@ def _header(checks: dict, manifest: dict, transcripts: dict, run_date: str) -> l
         "",
     ]
     return lines
+
+
+def _script_source_line(manifest: dict) -> str:
+    """Which document the script came from, and what kind of document it is.
+
+    This replaced a row that said "Storyboard" and named a pptx. A CGT course
+    has no storyboard at all, so that row was about to start printing a Word
+    filename under a heading that said PowerPoint.
+    """
+    from .script_source import describe_source
+
+    document = manifest.get("script_document") or manifest.get("storyboard")
+    source = manifest.get("script_source") or ""
+    if not source:
+        return document or "not recorded"
+    return describe_source(source, document)
+
+
+def _decode_line(transcripts: dict) -> str:
+    """Wall time, realtime factor and the machine, on the durable record.
+
+    These were only ever on a stats panel in the web interface, which is not
+    where anyone reads a finished run six months later. "23 minutes to 4" was
+    written down nowhere.
+    """
+    rows = transcripts.get("topics") or []
+    decode = sum(row.get("decode_seconds") or 0.0 for row in rows)
+    audio = sum(row.get("duration_s") or 0.0 for row in rows)
+    machine = transcripts.get("machine") or "not recorded"
+    if not decode:
+        return f"no decode this run, transcripts reused; on {machine}"
+    rate = f"{audio / decode:.2f}x realtime" if audio else "rate not measurable"
+    return (
+        f"{decode / 60.0:.1f} min to decode {audio / 60.0:.1f} min of audio "
+        f"({rate}), on {machine}"
+    )
 
 
 def _device_line(transcripts: dict) -> str:
@@ -106,14 +143,64 @@ def _device_line(transcripts: dict) -> str:
     )
 
 
-def _topic_map(checks: dict) -> list[str]:
-    lines = ["## Topic to slide map", "", "| Topic | Slides | Duration | Scripted |", "|---|---|---|---|"]
+def _source_span(row: dict) -> str:
+    """Where in the script document this topic came from.
+
+    Slides for a storyboard, the block heading for a BUS document, the file
+    name for a freeform script. One column, because the reader's question is
+    the same in all three cases: where do I go and look?
+    """
+    slides = row.get("slides")
+    if slides and len(slides) == 2:
+        first, last = slides
+        return f"slides {first}" if first == last else f"slides {first}-{last}"
+    return row.get("source_ref") or "n/a"
+
+
+def _topic_map(checks: dict, script: dict | None = None) -> list[str]:
+    from .script_source import STATE_NOTE
+
+    lines = [
+        "## Topic map",
+        "",
+        "| Topic | Script source | Script | Duration |",
+        "|---|---|---|---|",
+    ]
     for row in checks["topics"]:
-        first, last = row["slides"]
-        span = f"{first}" if first == last else f"{first}-{last}"
+        state = row.get("script") or ("verbatim" if row["scripted"] else "outline")
         lines.append(
-            f"| {row['topic']} | {span} | {_fmt_time(row['duration_s'])} | "
-            f"{'yes' if row['scripted'] else 'no, demo outline only'} |"
+            f"| {row['topic']} | {_escape(_source_span(row))} | "
+            f"{STATE_NOTE.get(state, state)} | {_fmt_time(row['duration_s'])} |"
+        )
+    lines.append("")
+    lines += _dropped_blocks(script or {})
+    return lines
+
+
+def _dropped_blocks(script: dict) -> list[str]:
+    """Blocks the extractor did not treat as topics, and why.
+
+    A dropped block is a silent decision about how many topics a course has,
+    and it moves every later block's file assignment by one if it is wrong. So
+    it is stated on the page rather than left in a log.
+    """
+    dropped = (script.get("mapping") or {}).get("dropped_blocks") or []
+    if not dropped:
+        return []
+    lines = [
+        f"{_count(len(dropped), 'block')} in the script document "
+        f"{'was' if len(dropped) == 1 else 'were'} not treated as a topic, "
+        "because nothing is delivered for them and so nothing can be checked. "
+        "They are listed here because dropping one that is really a topic would "
+        "shift every topic after it onto the wrong audio file.",
+        "",
+        "| Block | Title | Words | Why it was dropped |",
+        "|---|---|---|---|",
+    ]
+    for item in dropped:
+        lines.append(
+            f"| {item.get('block')} | {_escape(item.get('title', ''))} | "
+            f"{item.get('word_count')} | {_escape(item.get('reason', ''))} |"
         )
     lines.append("")
     return lines
@@ -362,19 +449,93 @@ def _artifact_section(artifacts: dict) -> list[str]:
     return lines
 
 
-def _unscripted_section(script_entry: dict, transcript: dict, discrepancies: dict) -> list[str]:
+def _voiced_symbol_section(discrepancies: dict) -> list[str]:
+    """Where the voice said the name of a symbol out loud.
+
+    Listen items, never defects, and grouped by term rather than by site: the
+    question "was reading `project_plan` as 'project underscore plan' meant?"
+    is answered once for all twelve occurrences, not twelve times.
+    """
+    groups = discrepancies.get("voiced_symbols") or []
+    if not groups:
+        return []
+    total = sum(g["occurrences"] for g in groups)
     lines = [
-        "This topic is a demonstration. The storyboard carries an outline, not",
-        "verbatim narration, so no word level alignment is possible and none was",
-        "attempted. The outline and the full transcript are both below so the",
-        "narration can be judged against intent rather than against wording.",
+        f"**Voiced symbols: {_count(total, 'site')} across "
+        f"{_count(len(groups), 'term')}.** The voice spoke the name of a symbol "
+        "or a URL part, which is what a synthetic voice does when it reads an "
+        "identifier such as `project_plan` literally. These are listen items, "
+        "not defects: a narrator does sometimes say \"underscore\" on purpose.",
         "",
-        "**Storyboard outline**",
-        "",
+        "| Term | Sites | Timestamps | Heard in context |",
+        "|---|---|---|---|",
     ]
-    for line in script_entry.get("outline", []):
-        lines.append(f"> {line}")
-        lines.append(">")
+    for group in groups:
+        stamps = ", ".join(_fmt_time(s["start_s"]) for s in group["sites"])
+        example = group["sites"][0].get("context", "")
+        lines.append(
+            f"| {_escape(group['term'])} | {group['occurrences']} | "
+            f"{_escape(stamps)} | {_escape(example)} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _unverifiable_duplication_section(discrepancies: dict) -> list[str]:
+    """Boundary duplications that no script is available to settle."""
+    found = discrepancies.get("unverifiable_duplications") or []
+    if not found:
+        return []
+    lines = [
+        f"**Possible segment boundary duplication, unverifiable without a "
+        f"script: {_count(len(found), 'site')}.** On a scripted topic these are "
+        "suppressed as engine artifacts, which is safe only because alignment "
+        "has already proved the script has one word there. Here that proof does "
+        "not exist, so they are listed rather than dropped. One pass with "
+        "headphones settles all of them.",
+        "",
+        "| Heard | Timestamp | ASR confidence | Context |",
+        "|---|---|---|---|",
+    ]
+    for item in found:
+        confidence = (
+            f"{item['confidence']:.3f}" if item["confidence"] is not None else "n/a"
+        )
+        if item.get("low_confidence"):
+            confidence += " (low)"
+        lines.append(
+            f"| {_escape(item['heard'])} | {_fmt_time(item['start_s'])} | "
+            f"{confidence} | {_escape(item.get('context', ''))} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _unscripted_section(script_entry: dict, transcript: dict, discrepancies: dict) -> list[str]:
+    state = script_entry.get("script") or "outline"
+    if state == "none":
+        lines = [
+            "This topic has no script. Nothing in the delivery says what the",
+            "voice was supposed to say, so no word level alignment is possible",
+            "and none was attempted. The full transcript is below and is the",
+            "whole of the evidence; the two checks that need no script follow",
+            "it.",
+            "",
+        ]
+    else:
+        lines = [
+            "This topic is a demonstration. The script document carries an",
+            "outline, not verbatim narration, so no word level alignment is",
+            "possible and none was attempted. The outline and the full",
+            "transcript are both below so the narration can be judged against",
+            "intent rather than against wording.",
+            "",
+            "**Script outline**",
+            "",
+        ]
+        for line in script_entry.get("outline", []):
+            lines.append(f"> {line}")
+            lines.append(">")
     lines += ["", "**Full transcript with timestamps**", ""]
     for segment in discrepancies.get("segments", []):
         lines.append(f"- `{_fmt_time(segment['start_s'])}` {segment['text']}")
@@ -407,10 +568,15 @@ def build_packet(
     artifacts_index: dict,
     run_date: str,
 ) -> str:
-    """Render the markdown packet. Pure: takes loaded data, returns text."""
+    """Render the markdown packet. Pure: takes loaded data, returns text.
+
+    `script` is the whole of script.json, because the packet reports what the
+    extractor decided as well as what it extracted: which blocks it dropped,
+    and which part of the document each topic came from.
+    """
     lines: list[str] = []
     lines += _header(checks, manifest, transcripts, run_date)
-    lines += _topic_map(checks)
+    lines += _topic_map(checks, script)
     lines += _conventions(artifacts_index)
     lines += _checks_table(checks)
     lines += _watchlist_section(checks)
@@ -418,9 +584,7 @@ def build_packet(
     lines += ["## Per topic evidence", ""]
     for row in checks["topics"]:
         topic = row["topic"]
-        first, last = row["slides"]
-        span = f"{first}" if first == last else f"{first}-{last}"
-        lines += [f"### Topic {topic} (slides {span})", ""]
+        lines += [f"### Topic {topic} ({_source_span(row)})", ""]
         data = per_topic[topic]
         if row["scripted"]:
             lines += _discrepancy_section(row, data["discrepancies"])
@@ -428,17 +592,31 @@ def build_packet(
             lines += _unscripted_section(
                 data["script"], data["transcript"], data["discrepancies"]
             )
+        lines += _unverifiable_duplication_section(data["discrepancies"])
+        lines += _voiced_symbol_section(data["discrepancies"])
         lines += _artifact_section(data["artifacts"])
 
+    summary = checks["summary"]
     lines += [
         "## Open items for the judgment step",
         "",
-        f"- {_count(checks['summary']['total_listen_items'], 'site is', 'sites are')} "
+        f"- {_count(summary['total_listen_items'], 'site is', 'sites are')} "
         "marked as a listen item because ASR confidence was below 0.6 or the text "
         "is an identifier whose voicing cannot be judged on paper.",
-        f"- {_count(checks['summary']['total_suppressed'], 'segment boundary duplication')} "
+        f"- {_count(summary['total_suppressed'], 'segment boundary duplication')} "
         "suppressed as engine artifacts. They are listed per topic above.",
     ]
+    if summary.get("total_voiced_symbols"):
+        lines.append(
+            f"- {_count(summary['total_voiced_symbols'], 'site is', 'sites are')} "
+            "a voiced symbol or URL part. Listen items, not defects."
+        )
+    if summary.get("total_unverifiable_duplications"):
+        lines.append(
+            f"- {_count(summary['total_unverifiable_duplications'], 'site is', 'sites are')} "
+            "a possible segment boundary duplication that no script is available "
+            "to confirm. Listen items, not defects."
+        )
     watchlist = checks.get("watchlist") or {}
     if watchlist.get("present"):
         candidates = len(watchlist["listen_items"])
@@ -475,11 +653,12 @@ def run_packet(
     artifacts_index = load("artifacts.json")
     manifest = load("manifest.json")
     transcripts = load("transcripts.json")
-    script = {t["topic"]: t for t in load("script.json")["topics"]}
+    script = load("script.json")
+    by_topic = {t["topic"]: t for t in script["topics"]}
 
     per_topic = {
         row["topic"]: {
-            "script": script[row["topic"]],
+            "script": by_topic[row["topic"]],
             "transcript": load(f"transcript_{row['topic']}.json"),
             "discrepancies": load(f"discrepancies_{row['topic']}.json"),
             "artifacts": load(f"artifacts_{row['topic']}.json"),

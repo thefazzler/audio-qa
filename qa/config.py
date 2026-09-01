@@ -22,6 +22,18 @@ from pathlib import Path
 import soundfile as sf
 import yaml
 
+from .script_source import (
+    COURSE_SOURCES,
+    FREEFORM,
+    OUTLINE,
+    PPTX,
+    SCRIPT_SOURCES,
+    SOURCE_SUFFIX,
+    TOPIC_STATES,
+    TopicScript,
+    VERBATIM,
+    default_source,
+)
 from .util import ConfigError, read_json, rel, write_json
 
 PROJECT_TYPES = {"VENDOR", "CGT"}
@@ -37,10 +49,21 @@ class CourseConfig:
     course_number: str
     project_type: str
     course_code: str
-    storyboard: Path
+    script_source: str
+    script_document: Path
     slide_map: dict[str, list[int]] = field(default_factory=dict)
     unscripted_topics: tuple[str, ...] = ()
+    topic_scripts: dict[str, TopicScript] = field(default_factory=dict)
     asr: dict = field(default_factory=dict)
+
+    @property
+    def storyboard(self) -> Path:
+        """The old name for the script document, kept for readers of pptx courses."""
+        return self.script_document
+
+    def script_for(self, topic: str) -> TopicScript:
+        """One topic's script state. Verbatim unless something said otherwise."""
+        return self.topic_scripts.get(str(topic), TopicScript(state=VERBATIM))
 
     @property
     def qa_work(self) -> Path:
@@ -58,23 +81,53 @@ def _require(data: dict, key: str, path: Path) -> str:
     return str(value).strip()
 
 
-def find_storyboard(course_dir: Path) -> Path:
-    """Exactly one pptx at the course root. Zero or many is a hard stop."""
-    decks = sorted(
-        p for p in course_dir.glob("*.pptx") if not p.name.startswith("~$")
+# Titles the BUS template and the delivery tooling leave lying around next to
+# a real script. Matching one is not a reason to halt; it is a reason not to
+# count the file as a candidate script document.
+IGNORED_DOCUMENTS = ("~$",)
+
+
+def find_script_document(course_dir: Path, source: str) -> Path:
+    """Exactly one document of the source's own type. Zero or many is a stop.
+
+    Deliberately not "whichever document is there". A CGT course folder can
+    easily acquire a stray Word file, and picking one by accident would align
+    an entire course against the wrong text and read as a catastrophic
+    narration failure rather than as the filing mistake it is.
+    """
+    suffix = SOURCE_SUFFIX.get(source)
+    if suffix is None:
+        raise ConfigError(
+            f"{course_dir}: script_source '{source}' names no course-level "
+            "document, so there is nothing to look for."
+        )
+    found = sorted(
+        p
+        for p in course_dir.glob(f"*{suffix}")
+        if not any(p.name.startswith(prefix) for prefix in IGNORED_DOCUMENTS)
     )
-    if not decks:
+    if not found:
         raise ConfigError(
-            f"No storyboard found: expected exactly one .pptx in {course_dir}."
+            f"No script document found: script_source '{source}' expects exactly "
+            f"one {suffix} in {course_dir}.\n"
+            "  A VENDOR course carries its script in a PowerPoint storyboard; a "
+            "CGT course carries it in a Word document in the BUS Writing "
+            "Template. Put the right document in the course folder, or correct "
+            "script_source in course.yaml."
         )
-    if len(decks) > 1:
-        names = ", ".join(p.name for p in decks)
+    if len(found) > 1:
+        names = ", ".join(p.name for p in found)
         raise ConfigError(
-            f"Found {len(decks)} .pptx files in {course_dir}: {names}.\n"
-            "  Exactly one storyboard is required. Remove the extras or move "
-            "them out of the course folder."
+            f"Found {len(found)} {suffix} files in {course_dir}: {names}.\n"
+            "  Exactly one script document is required. Remove the extras or "
+            "move them out of the course folder."
         )
-    return decks[0]
+    return found[0]
+
+
+def find_storyboard(course_dir: Path) -> Path:
+    """The pptx case, kept under its old name for callers that mean a deck."""
+    return find_script_document(course_dir, PPTX)
 
 
 def load_course_yaml(course_dir: Path) -> CourseConfig:
@@ -126,6 +179,21 @@ def load_course_yaml(course_dir: Path) -> CourseConfig:
     raw_unscripted = data.get("unscripted_topics") or []
     if not isinstance(raw_unscripted, (list, tuple)):
         raise ConfigError(f"{path}: unscripted_topics must be a list of topic ids.")
+    unscripted = tuple(str(t).strip() for t in raw_unscripted)
+
+    script_source = str(data.get("script_source") or default_source(project_type)).strip()
+    if script_source not in SCRIPT_SOURCES:
+        allowed = ", ".join(sorted(SCRIPT_SOURCES))
+        raise ConfigError(
+            f"{path}: script_source '{script_source}' is not recognized. Use one of {allowed}."
+        )
+    if script_source not in COURSE_SOURCES:
+        allowed = " or ".join(sorted(COURSE_SOURCES))
+        raise ConfigError(
+            f"{path}: script_source '{script_source}' describes one topic, not a "
+            f"course. Set the course to {allowed} and put '{script_source}' on the "
+            "topics that need it, under the topics key."
+        )
 
     asr = data.get("asr") or {}
     if not isinstance(asr, dict):
@@ -136,11 +204,73 @@ def load_course_yaml(course_dir: Path) -> CourseConfig:
         course_number=_require(data, "course_number", path),
         project_type=project_type,
         course_code=course_code,
-        storyboard=find_storyboard(course_dir),
+        script_source=script_source,
+        script_document=find_script_document(course_dir, script_source),
         slide_map=slide_map,
-        unscripted_topics=tuple(str(t).strip() for t in raw_unscripted),
+        unscripted_topics=unscripted,
+        topic_scripts=_topic_scripts(data, unscripted, path, course_dir),
         asr=asr,
     )
+
+
+def _topic_scripts(
+    data: dict, unscripted: tuple[str, ...], path: Path, course_dir: Path
+) -> dict[str, TopicScript]:
+    """Resolve every topic's script state from the two keys that can set it.
+
+    `unscripted_topics` came first and means outline-only; it is still the
+    shortest way to say the common VENDOR case and nothing here deprecates it.
+    The `topics` mapping is the general form and wins where both speak, because
+    a person who wrote out a state explicitly meant it.
+    """
+    resolved: dict[str, TopicScript] = {
+        topic: TopicScript(state=OUTLINE) for topic in unscripted
+    }
+
+    raw = data.get("topics") or {}
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"{path}: topics must be a mapping of topic id to its settings, as in\n"
+            '  topics: {"09": {script: none}}'
+        )
+
+    for key, value in raw.items():
+        topic = str(key).strip()
+        if not isinstance(value, dict):
+            raise ConfigError(
+                f"{path}: topics['{topic}'] must be a mapping, as in "
+                "{script: none} or {script: freeform, file: demo_script.docx}."
+            )
+        state = str(value.get("script") or VERBATIM).strip()
+        if state not in TOPIC_STATES:
+            allowed = ", ".join(sorted(TOPIC_STATES))
+            raise ConfigError(
+                f"{path}: topics['{topic}'].script is '{state}', which is not a "
+                f"script state. Use one of {allowed}."
+            )
+        document = str(value.get("file") or "").strip()
+        if state == FREEFORM and not document:
+            raise ConfigError(
+                f"{path}: topics['{topic}'] is freeform but names no file. A "
+                "freeform topic's narration is a document of its own, so it has "
+                "to say which one:\n"
+                f'  topics: {{"{topic}": {{script: freeform, file: demo_script.docx}}}}'
+            )
+        if document and state != FREEFORM:
+            raise ConfigError(
+                f"{path}: topics['{topic}'] names a file but its script state is "
+                f"'{state}'. Only a freeform topic reads a document of its own."
+            )
+        if document and not (course_dir / document).exists():
+            raise ConfigError(
+                f"{path}: topics['{topic}'] names {document}, which is not in "
+                f"{course_dir}.\n"
+                "  Put the freeform script in the course folder, or correct the "
+                "file name."
+            )
+        resolved[topic] = TopicScript(state=state, file=document)
+
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +348,9 @@ def build_manifest(cfg: CourseConfig, ingest: dict) -> dict:
                 "container": item["container"],
                 "kind": item["kind"],
                 "source_sha256": item["source_sha256"],
-                "scripted": topic not in cfg.unscripted_topics,
+                "script": cfg.script_for(topic).state,
+                "script_file": cfg.script_for(topic).file,
+                "scripted": cfg.script_for(topic).aligned,
                 **measured,
             }
         )
@@ -246,24 +378,47 @@ def build_manifest(cfg: CourseConfig, ingest: dict) -> dict:
 
     entries.sort(key=lambda e: topic_sort_key(e["topic"]))
 
-    missing_unscripted = [
-        t for t in cfg.unscripted_topics if t not in {e["topic"] for e in entries}
-    ]
+    delivered = {e["topic"] for e in entries}
+    missing_unscripted = [t for t in cfg.unscripted_topics if t not in delivered]
     if missing_unscripted:
         warnings.append(
             "course.yaml lists unscripted_topics that have no audio file: "
             + ", ".join(missing_unscripted)
+        )
+    missing_states = [
+        t for t in sorted(cfg.topic_scripts) if t not in delivered
+    ]
+    if missing_states:
+        warnings.append(
+            "course.yaml sets a script state on topics that have no audio file: "
+            + ", ".join(missing_states)
         )
 
     manifest = {
         "course_number": cfg.course_number,
         "course_code": cfg.course_code,
         "project_type": cfg.project_type,
-        "storyboard": rel(cfg.storyboard, cfg.course_dir),
+        "script_source": cfg.script_source,
+        "script_document": rel(cfg.script_document, cfg.course_dir),
+        "script_document_sha256": None,
+        # The old names for the two keys above. Kept so a packet or a test
+        # written against a pptx course still reads, and populated only when
+        # the source really is a PowerPoint deck: a CGT course has no
+        # storyboard, and saying it has one would be a lie in the data rather
+        # than a convenience.
+        "storyboard": (
+            rel(cfg.script_document, cfg.course_dir)
+            if cfg.script_source == PPTX
+            else None
+        ),
         "storyboard_sha256": None,
         "topic_count": len(entries),
         "total_duration_s": round(sum(e["duration_s"] for e in entries), 3),
         "unscripted_topics": list(cfg.unscripted_topics),
+        "topic_scripts": {
+            topic: {"script": script.state, "file": script.file}
+            for topic, script in sorted(cfg.topic_scripts.items())
+        },
         "warnings": warnings,
         "topics": entries,
     }
@@ -281,6 +436,9 @@ def run_config(course_dir: Path, force: bool = False) -> dict:
     from .util import sha256_file  # local import keeps the module surface small
 
     manifest = build_manifest(cfg, read_json(ingest_path))
-    manifest["storyboard_sha256"] = sha256_file(cfg.storyboard)
+    digest = sha256_file(cfg.script_document)
+    manifest["script_document_sha256"] = digest
+    if manifest["storyboard"] is not None:
+        manifest["storyboard_sha256"] = digest
     write_json(cfg.qa_work / "manifest.json", manifest)
     return manifest
