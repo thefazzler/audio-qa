@@ -449,6 +449,11 @@ def build_script_docx_bus(
             "non_narration": block.non_narration,
             "word_count": block.word_count,
         }
+        if entry["script"] == "outline":
+            # A CGT course scripts its demos, so this should not arise. If
+            # somebody marks a block outline-only anyway, the packet still has
+            # something to show a reader rather than an empty heading.
+            entry["outline"] = list(block.sentences)
         topic_entries.append(entry)
 
     return {
