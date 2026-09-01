@@ -142,10 +142,24 @@ def test_the_watchlist_never_certifies_pronunciation(watchlist):
 
 @pytest.fixture(scope="module")
 def packet_text() -> str:
-    packets = sorted(OUT.glob("reconciliation_packet_*.md"))
-    if not packets:
+    """The packet *this* run produced, read from the marker the stage wrote.
+
+    Deliberately not a glob of qa_out. Packets now go to the output folder and
+    are named for the run that made them (D28), so a glob of the course folder
+    finds whatever was left there by some earlier build and quietly asserts
+    against it. That is exactly how these tests kept passing on wording that
+    had already changed.
+    """
+    marker = OUT / "packet_index.json"
+    if not marker.exists():
         pytest.skip("no packet built")
-    return packets[-1].read_text(encoding="utf-8")
+    recorded = json.loads(marker.read_text(encoding="utf-8")).get("path")
+    if not recorded or not Path(recorded).exists():
+        pytest.fail(
+            f"{marker} points at {recorded}, which is not there. Re-run the "
+            "course; do not fall back to an older packet."
+        )
+    return Path(recorded).read_text(encoding="utf-8")
 
 
 def test_packet_carries_the_watchlist_table(packet_text, siem):
