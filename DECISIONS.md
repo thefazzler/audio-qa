@@ -387,3 +387,122 @@ found what nobody suspected.
 Tracked files now show zero four gram overlaps outside D4's marker phrases,
 which are load bearing because they are the literal strings TOPIC_MARKERS
 matches on, and a handful of ordinary English collocations.
+
+## D17. Every stage runs every time, except transcribe
+
+**The defect.** The stage runner skipped a stage when its output file already
+existed. Underneath that, the pipeline carries a hash per delivered file and
+uses it correctly. The skip short circuited it. A vendor returned a corrected
+mp3, the operator re-ran, and `ingest` was skipped because ingest.json existed,
+so the file was never re-hashed, so the manifest kept the old hash, so
+transcribe's per-topic staleness check never saw a change. Nothing re-ran. The
+same held for a corrected storyboard: script.json existed, the script stage was
+skipped, and alignment ran against the previous script silently.
+
+It was masked because `--force` was the habit during the build. For a web UI
+where re-submission is a button, it would have been a silent wrong answer, and
+the wrong answer is the expensive kind: a packet that looks complete and is
+aligned against superseded material.
+
+**The fix.** Every stage runs every time. Transcribe still skips per topic on
+its own hashes, and does not load the model when every topic is current, so an
+unchanged course still costs seconds. Measured on Course 10: ingest 1.2s,
+config 0.0s, script 0.5s, align 0.3s, artifacts 3.0s, checks 0.2s, packet 0.2s,
+about six seconds together against a 23 minute decode.
+
+Verified rather than assumed. One file of ten was replaced with different bytes
+and the course re-run: that topic re-transcribed in 35.5 seconds, the other
+nine reported `current`, and exactly one hash changed in the manifest.
+
+`--force` now means "also re-transcribe everything", which is the only thing
+left for it to mean.
+
+The script stage also records the storyboard hash it extracted from and warns
+when it differs from the previous run, so its dependence on the storyboard is
+explicit rather than incidental.
+
+**Scope.** This is a pipeline change made during the web build, which the rule
+"the web layer must not modify the pipeline" would otherwise forbid. It is a
+correctness fix the investigation surfaced, not web logic leaking into the
+engine, and it was approved as an exception on that basis.
+
+## D18. The course library, and two front doors to one engine
+
+**Where courses live.** Outside the repository, at the platform data directory:
+`%LOCALAPPDATA%\audio-qa\library` on Windows, `$XDG_DATA_HOME/audio-qa/library`
+on Linux, `~/Library/Application Support/audio-qa/library` on macOS.
+
+The reason is not tidiness. Storyboards and narration are customer material,
+and a library inside the repository would sit one bad ignore rule away from a
+public GitHub repo. Two rounds of this build were spent removing narration from
+that repo. Keeping courses out of the tree means no edit to `.gitignore` can
+publish one.
+
+Configured in four layers, first match wins: an explicit argument, the
+`AUDIO_QA_LIBRARY` environment variable, a `library` key in the user config
+file, then the platform default. Both the variable and the file exist on
+purpose: the variable is how a scripted or containerised run is configured, and
+the file is how someone who never opens a terminal points the app elsewhere
+once, from the UI.
+
+Settings are JSON, not TOML. The standard library reads both and writes
+neither, and JSON escapes Windows paths correctly without any quoting decisions
+of ours.
+
+Platform directories are hand rolled, about twenty lines, rather than adding
+platformdirs. The rules are stable and getting them wrong fails visibly.
+
+**Paths are normalized without following links.** `Path.resolve()` was the
+obvious choice and was wrong. It follows junctions and reparse points, and it
+answers differently depending on whether the path exists yet, so the library
+location shown in the UI before the first course was ingested did not match the
+one shown afterwards. On Windows it also resolved through packaged-app
+redirection and reported a path inside another application's private cache. An
+app that names one location and writes to another is not trustworthy, whatever
+the reason. The library path is now made absolute and tidy without resolution,
+so the location a person configured is the location they are shown.
+
+Found by driving the UI rather than by reading the code; the unit tests all
+passed either way. There is now a regression test for both halves.
+
+**Fixtures stay in `tests/`.** Courses 10 and 11 remain known-answer fixtures.
+Tests must not depend on where a person pointed their library. The UI starts
+empty; nothing is copied into the library to populate it.
+
+**Two front doors, one engine.** Three layers, kept apart:
+
+    qa/            the pipeline. Untouched by the web work except for D17.
+    qa/intake.py   the service layer: derive, verify, copy, write course.yaml.
+    qa/library.py  where things live.
+    qa/device.py   what this machine can do.
+    qa/web/        Streamlit pages. No pipeline logic.
+
+The test of the layering is that moving to a server would change only
+`qa/web/`. Intake reuses the scaffolder's own filename parser, so intake and
+`qa-new-course` cannot drift apart.
+
+**Intake decisions.** Copy, never move: the delivery is the only copy of
+customer material until intake succeeds, and removing it is a separate explicit
+act offered afterwards. Every copy is verified by hashing the source before and
+the destination after, because a short write that nobody noticed surfaces much
+later as a transcript that disagrees with the storyboard, and the hours between
+those two events are what make it expensive.
+
+Being a video and being outline-only are independent facts. The form suggests a
+video topic as a candidate and the user confirms, because a video is often a
+demo but a demo is not always a video and a video is not always outline-only.
+
+The device selector is wired to a real probe of what CTranslate2 can actually
+use, and reports a readable reason when a GPU is unavailable rather than a
+stack trace. Transcription is CPU only in this build; the selector exists so
+the GPU path can be added without touching the UI. The UI states that device
+affects speed and not results, in three places, because a person who believes
+otherwise will re-run a course hoping for a different answer.
+
+The browser's own file uploader is not used. It hands over bytes rather than
+paths, and this intake needs paths: to verify a copy against its source, and to
+offer to clean up the originals. A 128 MB demo video also has no business
+travelling through an upload on a machine that already holds the file. The
+Browse button opens the operating system's dialog in a short lived subprocess,
+because a Tk main loop inside a web server's worker thread hangs on some
+platforms. Pasting paths is always available as a fallback.

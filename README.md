@@ -8,6 +8,28 @@ Everything runs on your own machine. Audio never leaves it. The only external
 step is pasting the finished packet into a Claude chat, which is what the
 manual workflow already did.
 
+There are two front doors to one engine. `qa-run` is the command line; `qa-web`
+is a local web interface for people who would rather not open a terminal. They
+call the same functions and neither knows anything the other does not.
+
+    qa-web            hand it the downloaded files, it does the organizing
+    qa-run <course>   run a course folder directly
+
+## Where courses live
+
+Courses live in a library outside this repository:
+
+    %LOCALAPPDATA% then audio-qa\library      Windows
+    $XDG_DATA_HOME/audio-qa/library           Linux
+    ~/Library/Application Support/...         macOS
+
+Outside, deliberately. Storyboards and narration are customer material, and a
+library inside the repository would be one bad ignore rule away from being
+published. Override the location with the `AUDIO_QA_LIBRARY` environment
+variable, or from the web interface, which remembers the choice.
+
+The courses under `tests/` are known-answer fixtures and stay where they are.
+
 ## What it replaces
 
 The previous process asked two LLM chat sessions to transcribe narration audio

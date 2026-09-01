@@ -317,11 +317,36 @@ def run_extract_script(course_dir: Path, force: bool = False) -> dict:
 
     manifest = read_json(manifest_path)
     topics = [t["topic"] for t in manifest["topics"]]
+
+    # Record the storyboard the extraction was made from, and say so when it
+    # has changed since the last run. The stage runs every time now, so this
+    # cannot go stale silently; it is here to make the dependency explicit and
+    # to tell the operator that the script they are aligning against is not
+    # the one they aligned against yesterday. See DECISIONS.md D17.
+    storyboard_sha256 = manifest.get("storyboard_sha256")
+    previous_path = cfg.qa_work / "script.json"
+    changed = False
+    if previous_path.exists() and storyboard_sha256:
+        try:
+            previous = read_json(previous_path).get("storyboard_sha256")
+            changed = bool(previous) and previous != storyboard_sha256
+        except (OSError, ValueError):
+            changed = False
+
     script = build_script(
         storyboard=cfg.course_dir / manifest["storyboard"],
         topics=topics,
         unscripted=set(cfg.unscripted_topics),
         slide_map=cfg.slide_map or None,
+    )
+    script["storyboard_sha256"] = storyboard_sha256
+    script["warnings"] = (
+        [
+            "The storyboard has changed since the last run. Every topic is "
+            "aligned against the new script."
+        ]
+        if changed
+        else []
     )
     write_json(cfg.qa_work / "script.json", script)
     return script

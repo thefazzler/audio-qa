@@ -376,7 +376,7 @@ def build_section(
     if terms is None:
         return {
             "present": False,
-            "path": path.as_posix(),
+            "path": path.name,
             "reason": "no watchlist for this learning path; run qa-terms to seed one",
             "confidence_floor": floor,
             "terms": [],
@@ -432,7 +432,7 @@ def build_section(
     listen_items.sort(key=lambda i: (i["topic"], i["start_s"] if i["start_s"] is not None else 0.0))
     return {
         "present": True,
-        "path": path.as_posix(),
+        "path": path.name,
         "reason": None,
         "confidence_floor": floor,
         "terms": rows,

@@ -34,6 +34,32 @@ step, as does listing any outline-only topics under `unscripted_topics`.
 
 ---
 
+## `qa-web` — the web interface
+
+    qa-web                      start the local interface on port 8501
+    qa-web --port 8600          serve somewhere else
+    qa-web --no-browser         do not open a browser window
+
+The web interface and `qa-run` are two front doors to the same engine. Anything
+one can do the other can; neither knows anything the other does not.
+
+What it is for: handing the app a storyboard and a pile of narration files from
+wherever they were downloaded, and having it do the organizing. It derives the
+learning path, course number, course code and topic list from the filenames,
+asks only the questions a filename cannot answer, copies everything into the
+course library, and verifies every copy by hash before declaring the course
+ingested.
+
+Requires the web extra:
+
+    pip install -e ".[web]"
+
+Courses go to the library, which lives outside this repository so that no
+ignore rule can ever publish customer material. Its location, in order of
+precedence: an explicit setting in the app, the `AUDIO_QA_LIBRARY` environment
+variable, the saved setting, then the platform default
+(`%LOCALAPPDATA%` then `audio-qa\library`, on Windows).
+
 ## `qa-run` — run the QA pipeline
 
     qa-run <course_dir>
@@ -98,6 +124,16 @@ Requires the `script` stage to have run: `qa-run <course_dir> --stage script`.
 | `--top N` | How many candidates to print. Default `25`; all are written to the file regardless. |
 
 ---
+
+## Re-running a course
+
+Every stage runs every time. The cheap stages cost about six seconds together;
+transcribe skips per topic on each file's hash and does not load the model when
+nothing changed. So a course whose vendor returned one corrected file
+re-transcribes that topic and nothing else, and a course with no changes at all
+finishes in seconds.
+
+`--force` additionally re-transcribes every topic.
 
 ## Not commands
 

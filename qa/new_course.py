@@ -35,10 +35,15 @@ from .config import PROJECT_TYPES
 from .ingest import MEDIA_SUFFIXES
 from .util import ScaffoldError
 
-# Where course folders live, relative to the repo root. tests/ is the whole
-# corpus today; a course folder anywhere else still runs, this is just the
-# default the scaffolder builds into.
-DEFAULT_ROOT = Path("tests")
+# Where course folders live. This used to be the relative path Path("tests"),
+# which resolved against the working directory rather than the repo root as
+# its comment claimed, so running the scaffolder from anywhere else made a
+# stray tests/ folder there. Courses now go to the library, which is an
+# absolute path outside the repository. See DECISIONS.md D17.
+def default_root() -> Path:
+    from .library import library_root
+
+    return library_root()
 
 # <domain>_<learning_path>_<course>_<locale>_<topic ...>
 DELIVERY_NAME = re.compile(
@@ -216,8 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--root",
         type=Path,
-        default=DEFAULT_ROOT,
-        help=f"where learning paths live (default: {DEFAULT_ROOT})",
+        default=None,
+        help="where learning paths live (default: the course library)",
     )
     parser.add_argument(
         "--project-type",
@@ -242,7 +247,9 @@ def main(argv: list[str] | None = None) -> int:
         print()
 
         project_type = args.project_type or ask_project_type()
-        course_dir = scaffold(delivery, args.root, project_type, args.force)
+        course_dir = scaffold(
+            delivery, args.root or default_root(), project_type, args.force
+        )
     except ScaffoldError as exc:
         print(f"\nFAILED: {exc}", file=sys.stderr)
         return 2

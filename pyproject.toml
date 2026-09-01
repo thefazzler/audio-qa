@@ -14,10 +14,12 @@ dependencies = [
 
 [project.optional-dependencies]
 asr = ["faster-whisper>=1.1"]
+web = ["streamlit>=1.36"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
 qa-run = "qa.cli:main"
+qa-web = "qa.web.launch:main"
 qa-new-course = "qa.new_course:main"
 qa-terms = "qa.terms:main"
 

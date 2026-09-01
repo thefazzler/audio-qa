@@ -4,8 +4,11 @@
     qa-run --stage script <course_dir>  rerun one stage
     qa-run --force <course_dir>         ignore existing outputs
 
-A stage whose output already exists is skipped unless --force is given, so a
-full run after a tuning change re-does only the work that is actually stale.
+Every stage runs every time. The cheap stages cost about six seconds together,
+and transcribe skips per topic on each file's hash, so a re-run after a vendor
+returns one corrected file re-transcribes that topic and nothing else.
+--force additionally re-transcribes everything.
+
 Failures stop the run and print one specific message rather than a traceback.
 
 Later stages are registered here as they are built.
@@ -20,11 +23,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .util import QAError, read_json
+from .util import QAError
 
 
 @dataclass(frozen=True)
 class Stage:
+    """One pipeline stage: what it is called, where it writes, how to run it.
+
+    `output` is no longer used to decide whether to skip; it names the file the
+    stage produces so callers, including the web layer's progress view, can
+    find a stage's result without knowing the pipeline's internals.
+    """
+
     name: str
     output: str
     run: Callable[[Path, bool], dict]
@@ -202,38 +212,33 @@ def run(course_dir: Path, only: str | None, force: bool) -> int:
         )
 
     selected = [s for s in STAGES if only is None or s.name == only]
-    rows: list[tuple[str, str, str, float]] = []
+    rows: list[tuple[str, str, float]] = []
     started_run = time.monotonic()
 
+    # Every stage runs, every time. Skipping a stage because its output file
+    # existed short circuited the per-file hashes underneath it: a corrected
+    # mp3 was never re-hashed, so the manifest kept the old hash and
+    # transcribe never saw a change. The cheap stages total about six seconds
+    # on a full course, and transcribe skips per topic on its own hashes
+    # without loading the model, so an unchanged course still costs seconds.
+    # See DECISIONS.md D17.
     for stage in selected:
-        output = course_dir / stage.output
         started = time.monotonic()
-        if output.exists() and not force and only is None:
-            try:
-                result = read_json(output)
-                summary = stage.summary(result)
-                print(f"  [skip] {stage.name:<10} {summary}", flush=True)
-                rows.append((stage.name, "skipped", summary, 0.0))
-                continue
-            except (ValueError, KeyError, OSError):
-                pass  # unreadable or stale output: rebuild it
-
         result = stage.run(course_dir, force)
         elapsed = time.monotonic() - started
         summary = stage.summary(result)
         print(f"  [ok]   {stage.name:<10} {summary}  ({elapsed:.1f}s)", flush=True)
         _print_warnings(result)
-        rows.append((stage.name, "ok", summary, elapsed))
+        rows.append((stage.name, summary, elapsed))
 
     total = time.monotonic() - started_run
     print()
-    print(f"  {'stage':<11}{'status':<9}{'time':>8}  detail")
+    print(f"  {'stage':<11}{'time':>8}  detail")
     print("  " + "-" * 76)
-    for name, status, detail, elapsed in rows:
-        clock = f"{elapsed:.1f}s" if status == "ok" else "-"
-        print(f"  {name:<11}{status:<9}{clock:>8}  {detail}")
+    for name, detail, elapsed in rows:
+        print(f"  {name:<11}{elapsed:>7.1f}s  {detail}")
     print("  " + "-" * 76)
-    print(f"  {'total':<11}{'':<9}{total:>7.1f}s")
+    print(f"  {'total':<11}{total:>7.1f}s")
     return 0
 
 
