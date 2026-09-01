@@ -385,13 +385,19 @@ def build_manifest(cfg: CourseConfig, ingest: dict) -> dict:
             "course.yaml lists unscripted_topics that have no audio file: "
             + ", ".join(missing_unscripted)
         )
-    missing_states = [
-        t for t in sorted(cfg.topic_scripts) if t not in delivered
-    ]
+    missing_states = [t for t in sorted(cfg.topic_scripts) if t not in delivered]
     if missing_states:
+        # Worth more than a shrug. A topic id that does not match a delivered
+        # file means the state was not applied to anything, so a demo meant to
+        # be outline-only is about to be aligned word for word against an
+        # outline, which reads as a page of deletions. The usual cause is a
+        # topic id written without its leading zero.
         warnings.append(
             "course.yaml sets a script state on topics that have no audio file: "
             + ", ".join(missing_states)
+            + ". Those states were not applied to anything, and the topics they "
+            "were meant for are being treated as verbatim. Delivered topic ids "
+            "are: " + ", ".join(sorted(delivered))
         )
 
     manifest = {

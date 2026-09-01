@@ -694,10 +694,14 @@ def test_a_cgt_course_finds_its_bus_document_among_the_selection(tmp_path):
     form = IntakeForm(project_type="CGT", reviewed_by="Ryan")
     result = ingest_selection(selection, form, library=tmp_path / "library")
     assert (result.course_dir / script.name).exists()
-    # The storyboard came along too, and does not become the script.
     cfg_path = result.course_dir / "course.yaml"
     assert "script_source: docx_bus" in cfg_path.read_text(encoding="utf-8")
     assert load_course_yaml(result.course_dir).script_document.name == script.name
+
+    # The storyboard that arrived beside it is not this course's script and is
+    # left where it was, which is said out loud rather than done silently.
+    assert not (result.course_dir / "it_spisccc26_11_storyboard.pptx").exists()
+    assert any("Not copied" in w and "storyboard" in w for w in result.warnings)
 
 
 def test_a_freeform_topic_names_its_own_document_and_it_is_copied(tmp_path):

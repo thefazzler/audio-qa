@@ -410,6 +410,10 @@ def _apply_topic_overlays(
                 {
                     "script": FREEFORM,
                     "scripted": True,
+                    # The slides this topic occupies in the deck are no longer
+                    # where its script is, so pointing a reader at them would
+                    # send them to the wrong document.
+                    "slides": None,
                     "source_ref": replacement["source_ref"],
                     "sentences": replacement["sentences"],
                     "non_narration": [],

@@ -232,7 +232,9 @@ def _packet_history(results) -> None:
     """
     from qa.results import packet_history
 
-    history = packet_history(results.course_code)
+    # Beside the packet this run wrote, not wherever the setting points now.
+    # A run started with --output put its packet somewhere else on purpose.
+    history = packet_history(results.course_code, results.packet_md.parent)
     if len(history) <= 1:
         return
     with st.expander(f"Earlier packets for this course ({len(history) - 1})"):

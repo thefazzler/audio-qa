@@ -421,12 +421,32 @@ def ingest_selection(
         for _, (state, document) in form.resolved_scripts().items()
         if state == FREEFORM and document
     }
-    for document in [course_document] + [
-        p for p in selection.freeform_candidates(form.project_type) if p.name in freeform
-    ]:
-        if document is None:
-            continue
+    wanted: list[Path] = [p for p in [course_document] if p is not None]
+    wanted += [
+        p
+        for p in selection.freeform_candidates(form.project_type)
+        if p.name in freeform
+    ]
+    for document in wanted:
         result.copied.append(_copy_verified(document, course_dir / document.name))
+
+    # Say what was selected and not copied. A CGT delivery often arrives with a
+    # storyboard beside the Word script; leaving it in Downloads is correct,
+    # and doing it silently is how someone concludes the app lost their file.
+    left = [
+        p
+        for p in ([selection.storyboard] if selection.storyboard else [])
+        + list(selection.documents)
+        if p not in wanted
+    ]
+    if left:
+        result.warnings.append(
+            "Not copied, because this course's script is "
+            f"{course_document.name if course_document else 'elsewhere'} and "
+            "nothing else was assigned to a topic: "
+            + ", ".join(p.name for p in left)
+            + ". The originals are untouched where you downloaded them."
+        )
 
     for item in selection.media:
         copied = _copy_verified(item.path, audio_dir / item.name)
