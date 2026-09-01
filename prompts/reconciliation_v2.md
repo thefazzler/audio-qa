@@ -99,11 +99,11 @@ Classify every finding into exactly one class. Classes 1 and 2 are DEFECTS: obje
 
 METHOD
 
-11. Work topic by topic in the order the packet presents them.
-12. For each discrepancy row, assign a class or dismiss it, using rules 5 through 10. State the confidence you relied on.
-13. Read the audio findings for each topic. The packet reports silences that deviate from the course's own convention, not silences per se. A course that pads every file with three seconds of silence is following a house style, and the packet says so in MEASURED AUDIO CONVENTIONS; do not report house style as a defect. If the stated convention itself looks wrong for the deliverable, raise that once, at course level, as an observation rather than as a per file finding.
-14. Build the LISTEN LIST: every item that cannot be resolved from the packet. This includes every site below 0.6 confidence, every pronunciation question, every identifier or URL, every unscripted topic passage that does not clearly match the outline, and every topic carrying a check flag. Each listen item gets a topic number, a timestamp from the packet, and a one-line statement of what to listen for.
-15. Assign each topic a verdict:
+13. Work topic by topic in the order the packet presents them.
+14. For each discrepancy row, assign a class or dismiss it, using rules 5 through 12. State the confidence you relied on.
+15. Read the audio findings for each topic. The packet reports silences that deviate from the course's own convention, not silences per se. A course that pads every file with three seconds of silence is following a house style, and the packet says so in MEASURED AUDIO CONVENTIONS; do not report house style as a defect. If the stated convention itself looks wrong for the deliverable, raise that once, at course level, as an observation rather than as a per file finding.
+16. Build the LISTEN LIST: every item that cannot be resolved from the packet. This includes every site below 0.6 confidence, every pronunciation question, every identifier or URL, every unaligned topic passage that does not clearly match its outline, every voiced-symbol group, every unverifiable duplication, the whole of any topic with no script at all, and every topic carrying a check flag. Each listen item gets a topic number, a timestamp from the packet, and a one-line statement of what to listen for. Group the voiced-symbol sites by term, as the packet does: one listen settles every occurrence of a term, and listing them separately turns one question into a dozen.
+17. Assign each topic a verdict:
     CLEAN: no defects; at most uncorroborated advisory flags.
     FIX RECOMMENDED: confirmed defects that do not block release, or a pattern of advisory flags worth a listen.
     SHOWSTOPPER: confirmed Class 1 or Class 2 defects that would embarrass the course in front of a learner: wrong objectives, duplicated or missing content, a mispronounced or misrendered technical identifier, factual errors.
@@ -116,7 +116,7 @@ Produce one findings document in markdown with these sections in this order. Kee
     HEADLINE: two or three sentences. Overall narration fidelity, count of defects by class, count of listen items, count of showstoppers. State plainly that pronunciation and delivery were not measured.
     VERDICT TABLE: one row per topic. Columns: Topic, Verdict, Defect count by class, One-line reason.
     FINDINGS: one row per confirmed or probable defect. Columns: ID (course-topic-sequence, e.g., C10-T4-01), Topic, Class, Location (timestamp), Script says, Voice said, ASR confidence, Severity (Showstopper / Fix / Minor), Recommended fix.
-    LISTEN LIST: per rule 14.
+    LISTEN LIST: per rule 16.
     INSTRUMENT NOTES: anything the packet reveals about the pipeline itself: suppressed duplications, low confidence concentrations, check flags, anomalies. This tracks instrument reliability across courses the way the v1 dismissed-errors section did.
     REMEDIATION ROUTING, by project type:
         CGT: a remediation plan section grouping findings by fix path: storyboard edits first, then re-renders, so upstream fixes precede downstream ones. Written as directives an editor can act on.
@@ -159,12 +159,12 @@ Edit Description rules: address the vendor directly and courteously, state what 
 
 RULES OF CONDUCT
 
-16. Never soften a showstopper and never inflate a minor. Severity is assigned by learner impact, not by how awkward the fix is.
-17. Every finding must be traceable: quote the exact script text and the exact transcript text from the packet, and give the timestamp. No finding may rest on a paraphrase.
-18. If the evidence does not support a conclusion, say so and put the item on the listen list. A wrong confident finding costs more than an honest open item.
-19. If you catch yourself hypothesizing about causes upstream of the evidence (vendor pipeline behavior, rendering order, tooling), label it explicitly as hypothesis, not finding.
-20. Do not summarize or reproduce long passages of the course content beyond what findings require. Quote only the lines in dispute.
-21. Do not treat a clean packet as a certified course. Word fidelity is measured; pronunciation and delivery are not. Say what was measured and what was not, every time.
+18. Never soften a showstopper and never inflate a minor. Severity is assigned by learner impact, not by how awkward the fix is.
+19. Every finding must be traceable: quote the exact script text and the exact transcript text from the packet, and give the timestamp. No finding may rest on a paraphrase.
+20. If the evidence does not support a conclusion, say so and put the item on the listen list. A wrong confident finding costs more than an honest open item.
+21. If you catch yourself hypothesizing about causes upstream of the evidence (vendor pipeline behavior, rendering order, tooling), label it explicitly as hypothesis, not finding.
+22. Do not summarize or reproduce long passages of the course content beyond what findings require. Quote only the lines in dispute.
+23. Do not treat a clean packet as a certified course. Word fidelity is measured; pronunciation and delivery are not. Say what was measured and what was not, every time.
 
 FINAL CHECK BEFORE YOU RESPOND
 
