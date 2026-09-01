@@ -28,6 +28,18 @@ FLAGGED = "check flag"
 UNSCRIPTED = "outline only"
 NO_SCRIPT = "no script"
 
+# Timestamps spelled out in a grouped listen item before it says "and N more".
+# The packet carries every one of them; this is the reading list, not the
+# evidence, and a row of thirty timestamps is not a reading list.
+LISTED_TIMESTAMPS = 6
+
+
+def _timestamp(seconds: float | None) -> str:
+    if seconds is None:
+        return "n/a"
+    minutes, rest = divmod(float(seconds), 60.0)
+    return f"{int(minutes)}:{rest:05.2f}"
+
 
 class ResultsError(QAError):
     pass
@@ -50,10 +62,7 @@ class ListenItem:
 
     @property
     def timestamp(self) -> str:
-        if self.start_s is None:
-            return "n/a"
-        minutes, rest = divmod(float(self.start_s), 60.0)
-        return f"{int(minutes)}:{rest:05.2f}"
+        return _timestamp(self.start_s)
 
 
 @dataclass
@@ -204,24 +213,37 @@ def collect_listen_items(work: Path, checks: dict) -> list[ListenItem]:
         # The two checks that need no script. Both are listen items by
         # construction: neither can be a defect, because neither has anything
         # to be wrong against.
+        # One row per term, not per site. Course 10's demo voices "underscore"
+        # fourteen times, and fourteen rows would be fourteen copies of one
+        # question. A listener answers "was that meant?" once and is done.
         for group in data.get("voiced_symbols", []):
-            for site in group["sites"]:
-                items.append(
-                    ListenItem(
-                        topic=topic,
-                        kind="voiced symbol",
-                        start_s=site.get("start_s"),
-                        what=f"heard {site.get('context') or group['term']!r}",
-                        detail=(
-                            f"the voice said the symbol name {group['term']!r}, "
-                            f"{group['occurrences']} time"
-                            f"{'' if group['occurrences'] == 1 else 's'} in this "
-                            "topic. Narrators do say this on purpose; one listen "
-                            "settles every site."
-                        ),
-                        confidence=site.get("confidence"),
-                    )
+            sites = group["sites"]
+            stamps = ", ".join(
+                _timestamp(site.get("start_s")) for site in sites[:LISTED_TIMESTAMPS]
+            )
+            if len(sites) > LISTED_TIMESTAMPS:
+                stamps += f" and {len(sites) - LISTED_TIMESTAMPS} more"
+            items.append(
+                ListenItem(
+                    topic=topic,
+                    kind="voiced symbol",
+                    start_s=sites[0].get("start_s") if sites else None,
+                    what=(
+                        f"{group['term']!r} spoken as a word, "
+                        f"{group['occurrences']} time"
+                        f"{'' if group['occurrences'] == 1 else 's'}: {stamps}"
+                    ),
+                    detail=(
+                        "the voice read a symbol or URL part aloud, as a "
+                        "synthetic voice does with an identifier. Narrators also "
+                        "do it on purpose, so one listen settles every site."
+                    ),
+                    confidence=min(
+                        (s["confidence"] for s in sites if s.get("confidence")),
+                        default=None,
+                    ),
                 )
+            )
         for site in data.get("unverifiable_duplications", []):
             items.append(
                 ListenItem(

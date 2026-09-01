@@ -400,3 +400,111 @@ def test_real_course_listen_list_includes_pronunciation_candidates():
     assert any(i.corroborated for i in results.listen), (
         "alignment and the watchlist both flagged a site; that should be marked"
     )
+
+
+# ---------------------------------------------------------------------------
+# The checks that need no script, on the listen list
+# ---------------------------------------------------------------------------
+
+def _plant_transcript_checks(course, topic, voiced=None, duplications=None):
+    """Put voiced-symbol groups and duplications into a topic's evidence file."""
+    path = course / "qa_work" / f"discrepancies_{topic}.json"
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    data.setdefault("discrepancies", [])
+    data["voiced_symbols"] = voiced or []
+    data["unverifiable_duplications"] = duplications or []
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _sites(count, term="underscore"):
+    return {
+        "term": term,
+        "occurrences": count,
+        "first_s": 10.0,
+        "sites": [
+            {
+                "start_s": 10.0 * (n + 1),
+                "confidence": 0.3,
+                "heard": term,
+                "context": f"project {term} plan",
+            }
+            for n in range(count)
+        ],
+    }
+
+
+def test_a_voiced_symbol_is_one_listen_item_per_term_not_per_site(course):
+    """Fourteen rows would be fourteen copies of one question."""
+    write_checks(course, [topic_row("09", scripted=False, coverage=None)])
+    _plant_transcript_checks(course, "09", voiced=[_sites(14)])
+
+    checks = json.loads((course / "qa_work" / "checks.json").read_text(encoding="utf-8"))
+    items = collect_listen_items(course / "qa_work", checks)
+    voiced = [i for i in items if i.kind == "voiced symbol"]
+
+    assert len(voiced) == 1
+    assert "14 times" in voiced[0].what
+    assert voiced[0].start_s == 10.0
+
+
+def test_a_grouped_listen_item_lists_timestamps_and_then_stops_counting(course):
+    write_checks(course, [topic_row("09", scripted=False, coverage=None)])
+    _plant_transcript_checks(course, "09", voiced=[_sites(14)])
+
+    checks = json.loads((course / "qa_work" / "checks.json").read_text(encoding="utf-8"))
+    item = next(
+        i
+        for i in collect_listen_items(course / "qa_work", checks)
+        if i.kind == "voiced symbol"
+    )
+    assert item.what.count(":") >= 6
+    assert "and 8 more" in item.what
+
+
+def test_a_voiced_symbol_never_carries_a_verdict(course):
+    write_checks(course, [topic_row("09", scripted=False, coverage=None)])
+    _plant_transcript_checks(course, "09", voiced=[_sites(2)])
+
+    checks = json.loads((course / "qa_work" / "checks.json").read_text(encoding="utf-8"))
+    item = next(
+        i
+        for i in collect_listen_items(course / "qa_work", checks)
+        if i.kind == "voiced symbol"
+    )
+    assert "on purpose" in item.detail
+    for word in ("defect", "error", "wrong", "fix"):
+        assert word not in item.detail.lower()
+
+
+def test_an_unverifiable_duplication_is_one_item_per_site(course):
+    """These are individual sites, not repetitions of one question."""
+    write_checks(course, [topic_row("09", scripted=False, coverage=None)])
+    _plant_transcript_checks(
+        course,
+        "09",
+        duplications=[
+            {"heard": "document.", "start_s": 5.0, "confidence": 0.09,
+             "low_confidence": True, "context": "the document. document. Next"},
+            {"heard": "save.", "start_s": 9.0, "confidence": 0.95,
+             "low_confidence": False, "context": "click Save save. Now"},
+        ],
+    )
+    checks = json.loads((course / "qa_work" / "checks.json").read_text(encoding="utf-8"))
+    found = [
+        i
+        for i in collect_listen_items(course / "qa_work", checks)
+        if i.kind == "unverifiable duplication"
+    ]
+    assert len(found) == 2
+    assert {i.start_s for i in found} == {5.0, 9.0}
+
+
+def test_a_topic_with_no_script_says_so_rather_than_saying_outline(course):
+    write_checks(
+        course, [topic_row("09", scripted=False, coverage=None, script="none")]
+    )
+    checks = json.loads((course / "qa_work" / "checks.json").read_text(encoding="utf-8"))
+    items = collect_listen_items(course / "qa_work", checks)
+    whole = next(i for i in items if i.what == "the whole file")
+    assert whole.kind == "no script"
+    assert "no script" in whole.detail
