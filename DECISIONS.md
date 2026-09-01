@@ -1073,17 +1073,33 @@ site both report is a defect. A site only one reports is a listen item. That is
 the old triangulation rebuilt on instruments that, unlike two LLM listeners,
 neither paraphrase nor truncate nor silently skip a file.
 
-The evidence is already in hand. Course 10, same audio, same model, same day:
+The evidence is already in hand, and it got cleaner when it was re-measured.
 
-    CPU int8      3 discrepancies
-    GPU float16   4 discrepancies
-    shared        2, both at high confidence
+The first pair, before D26's SaaS equivalence, was CPU int8 at 3 discrepancies
+and GPU float16 at 4, sharing 2. Removing the SaaS noise from the GPU side left
+this, on the same audio, the same model and the same afternoon:
 
-The two shared at high confidence are the real defects. The rest is decode
-noise, and the point is that the pair separates them without a human having to
-guess which is which. Course 11 gives the counterexample that makes it worth
-doing at all: GPU float16 caught a whole-sentence deletion in topic 02 that CPU
-int8 missed. See the addendum to D23.
+    site                                          CPU int8   GPU float16
+    topic 04  "provides a" heard as "provide the"  p 0.845     p 0.923
+    topic 05  "and" heard as "in"                  p 0.959     p 0.959
+    topic 04  "element." inserted                     -        p 0.054
+    topic 06  "managed" heard as "manage"          p 0.345        -
+
+**Both devices find three. They agree on two, and those two are the only ones
+either device is confident about.** Each device also finds one site the other
+does not, and both of those are decode noise by the instrument's own account:
+p 0.054 and p 0.345, well under the 0.6 floor.
+
+That is the whole argument in four rows. A site both report is a defect. A site
+one reports is a listen item, and here the confidence says so independently,
+which is the check on the check. The pair separated signal from noise without a
+human having to guess which was which.
+
+Course 11 gives the counterexample that makes it worth doing rather than merely
+interesting: GPU float16 caught a whole-sentence deletion in topic 02 that CPU
+int8 missed, at high confidence on the side that saw it. Agreement is not the
+only useful outcome of running two instruments; sometimes one of them is simply
+right and the other is not. See the addendum to D23.
 
 Against building it now: it doubles decode time on the only machine where that
 is cheap, it needs a second cache slot per topic, and the packet would need a
