@@ -612,3 +612,37 @@ read as describing the run.
 
 Everything else in the panel was already recorded by a stage. Nothing is
 computed for the display.
+
+## D21. Device is excluded from the transcript cache key, precision is not
+
+`ASRSettings.fingerprint` decides when a cached transcript is stale. It carries
+the model, the compute type, the beam size, the VAD setting and the language.
+It deliberately does not carry the device.
+
+**Why device is out.** The same audio through the same engine at the same
+precision produces the same transcript on CPU or GPU. Device affects speed, not
+results. Someone who runs a course on CPU and later re-runs it on a machine
+with a graphics card should get their cached transcripts back, not thirty
+minutes of decoding they have already paid for. Adding device to the key
+because "the GPU path is new and we should be safe" would throw away every
+cached transcript on a machine that merely gained hardware, which is the exact
+mistake the comment on that method exists to prevent.
+
+**Why compute type is in.** A float16 run is a different numerical path from an
+int8 run and can legitimately differ in what it hears, so changing precision
+does invalidate a transcript, correctly. Device alone never does. The two look
+similar from the UI, where both are "how it runs", and they are not the same
+kind of change.
+
+`ASRSettings` still carries `device`, so a run records what it used, and
+`settings_from_course` coerces it through `effective_device` first. Recording a
+requested `cuda` on a build that decodes on CPU would put a false claim in
+every transcript's settings block.
+
+The staleness rule itself is `transcript_is_current`, extracted from inside the
+transcribe loop so it can be tested on its own. Five tests cover this: device
+changes leave a transcript current; compute type, model, beam, VAD and language
+changes do not; and a changed audio hash never does.
+
+This is the decision `HANDOVER.md` points at when it says the GPU path is wired
+but not enabled.

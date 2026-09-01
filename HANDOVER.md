@@ -173,9 +173,9 @@ waiting on a person rather than on code, which is why they are here.
 
 **The GPU path is wired but not enabled.** The device probe is real and the
 selector works; transcription still runs CPU only. Enabling it is a change in
-`qa/transcribe.py` alone. Note D-comment on `ASRSettings.fingerprint`: device
-is deliberately excluded from the cache key, so switching device must not force
-a re-decode, while compute type is included because a different precision
+`qa/transcribe.py` alone. Before you touch the cache key, read **D21**: device
+is deliberately excluded from it, so switching device must not force a
+re-decode, while compute type is included because a different precision
 legitimately can hear differently.
 
 ## Who to ask
