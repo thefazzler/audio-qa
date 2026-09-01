@@ -284,3 +284,10 @@ drop the course material into `tests/spisccc26/course10/` and run:
 `DECISIONS.md` records where the build departs from
 `Audio_QA_Pipeline_Build_Spec_v1.md` and why. Read it before changing a
 threshold; most of them were set against a measured result rather than picked.
+
+## License
+
+Copyright (c) 2026 Skillsoft. All rights reserved. Proprietary; see LICENSE.
+The repository is readable publicly, which is not the same as a grant of rights
+in it. No permission to use, copy, modify or redistribute is given to anyone
+outside Skillsoft.
