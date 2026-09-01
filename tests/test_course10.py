@@ -193,13 +193,57 @@ def test_no_topic_carries_a_check_flag(checks):
     assert checks["summary"]["flagged_topics"] == []
 
 
-def test_discrepancies_are_few_and_all_substitutions():
+def test_discrepancies_are_few_and_no_content_is_missing():
+    """Nothing is deleted anywhere, and what survives is a handful of sites.
+
+    Insertions used to be zero as well. They are not any more, and the reason
+    is a real improvement rather than a regression: see the SaaS test below.
+    """
     total = 0
     for topic in SCRIPTED:
         result = discrepancies(topic)
         total += len(result["discrepancies"])
-        assert result["counts"]["insertion"] == 0, topic
+        assert result["counts"]["deletion"] == 0, topic
     assert total <= 5, "Course 10 should stay near silent after normalization"
+
+
+def test_the_saas_family_is_absorbed_rather_than_reported(script):
+    """GPU decode writes "SAS" for "SaaS"; the narrator said "sass" both times.
+
+    Two sites in topic 04. Both are gone from the discrepancy table now that
+    EQUIVALENCES folds the family, and the term is on the watchlist so it is
+    listened to rather than diffed: an equivalence that absorbs a difference
+    without a watchlist entry beside it is the pipeline quietly not looking.
+
+    The course total went from 4 to 3, not to 2, and the missing one is the
+    point of this test. One of the two SAS sites had been fused into a single
+    substitution row with a separate low-confidence insertion next to it, so
+    removing the SaaS half leaves that insertion standing on its own, correctly,
+    as the listen item it always was.
+    """
+    result = discrepancies("04")
+    said = " ".join(
+        (d["script_says"] + " " + d["voice_said"]) for d in result["discrepancies"]
+    )
+    assert "SAS" not in said
+    assert "SaaS" not in said
+
+    transcript = json.loads((WORK / "transcript_04.json").read_text(encoding="utf-8"))
+    heard = [w["w"].strip(" .,") for w in transcript["words"]]
+    assert heard.count("SAS") == 2, "the two sites are still in the transcript"
+
+    insertions = [d for d in result["discrepancies"] if d["type"] == "insertion"]
+    assert len(insertions) == 1
+    assert insertions[0]["listen_item"] is True
+
+
+def test_the_absorbed_terms_are_all_on_the_watchlist(checks):
+    """Every term EQUIVALENCES folds has to be listened to somewhere."""
+    watchlist = checks.get("watchlist") or {}
+    if not watchlist.get("present"):
+        pytest.skip("no watchlist for this learning path")
+    listed = {row["term"] for row in watchlist["terms"]}
+    assert {"SaaS", "IaaS", "PaaS"} <= listed
 
 
 def test_topics_the_manual_run_called_clean_are_clean():

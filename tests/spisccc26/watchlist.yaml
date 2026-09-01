@@ -21,7 +21,23 @@
   say: TODO
 
 # Course 10 topic 04 decoded this at p 0.415, the lowest confidence word in
-# that course.
+# that course. The GPU decode of the same file wrote "SAS" at two further
+# sites and reported them as substitutions; the narrator said "sass" both
+# times. EQUIVALENCES now folds SAS into SaaS so those stop being diffed,
+# which is exactly why the term has to be listened to instead: an
+# equivalence that absorbs a difference must be paired with a watchlist
+# entry, or the pipeline has quietly stopped looking.
 - term: "SaaS"
   expect: "SaaS"
+  say: TODO
+
+# The rest of the service-model family, on the same reasoning. IAS and PAS
+# are folded into IaaS and PaaS by EQUIVALENCES, so a mispronunciation of
+# either can only be caught by ear.
+- term: "IaaS"
+  expect: "IaaS"
+  say: TODO
+
+- term: "PaaS"
+  expect: "PaaS"
   say: TODO

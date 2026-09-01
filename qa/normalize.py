@@ -82,6 +82,14 @@ EQUIVALENCES: dict[tuple[str, ...], str] = {
     ("i", "a", "a", "s"): "iaas",
     ("p", "a", "a", "s"): "paas",
     ("s", "a", "a", "s"): "saas",
+    # The service-model family as the decoder actually writes it. A narrator
+    # saying "sass" is transcribed "SAS" as often as "SaaS", and the two were
+    # reported as substitutions at two sites in Course 10 topic 04 where the
+    # voice was right both times. The letters are folded before this table sees
+    # them, so one row covers "SAS", "sas" and any other casing.
+    ("sas",): "saas",
+    ("ias",): "iaas",
+    ("pas",): "paas",
     ("u", "r", "l"): "url",
     ("h", "t", "t", "p", "s"): "https",
     ("h", "t", "t", "p"): "http",

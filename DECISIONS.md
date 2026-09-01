@@ -818,6 +818,29 @@ are re-verified", carried in one constant, `qa.device.DEVICE_NOTE`, so it
 cannot drift between pages. The stronger sentence is not recoverable by
 argument; it was tested and it failed.
 
+### Addendum: the counterexample, and why the wording says "may"
+
+D25 concluded that findings are robust to the device. That is true in
+aggregate and it is not a guarantee, and the difference matters enough to name
+the case that shows it.
+
+**In Course 11, GPU float16 caught a whole-sentence deletion in topic 02 that
+CPU int8 missed.** Not a confidence that moved, not a token spelt differently:
+a sentence the script contains, reported absent by one device and matched by the
+other. If a course had been run on CPU alone, that finding would not exist.
+
+This is why the wording is "device may affect decode precision; findings are
+re-verified" rather than anything stronger in either direction. Findings are
+usually stable; they are not guaranteed to be. Anyone who reads D25 as
+permission to treat the two devices as interchangeable should read this
+paragraph first.
+
+The Course 10 pair measured on 2026-09-01 says the same thing more quietly. Same
+audio, same model, same day: CPU int8 found 3 discrepancies and GPU float16
+found 4. The two the devices share are at high confidence and are the real
+defects; the rest is decode noise. That pair is the evidence behind D27, which
+proposes using the disagreement rather than merely tolerating it.
+
 **The speedup is 4.2x at float16 and 3.3x at int8** on this laptop, an RTX
 3060. A 75.7 minute course decodes in 7.8 minutes rather than 32.9. That is the
 first real number behind any "handful of minutes" expectation.
@@ -846,11 +869,35 @@ forget.
 | CUDA OK | **Confirmed live** on this laptop, RTX 3060, driver 616.56, after installing `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` into the venv. A full Course 11 decode ran on GPU at 9.67x realtime. | Done. |
 | GPU PRESENT BUT NOT USABLE | **Confirmed live** on this same laptop before that install: the card enumerated, compute types listed, and the decode failed with `cublas64_12.dll is not found`. This is what prompted the probe to start checking library loadability. | Done, and it was found by running rather than by reasoning. |
 | VERSION MISMATCH | **Injection only.** No machine here has an old CUDA toolkit. | `qa-setup --check` on the owner's desktop with its stale CUDA 11.0, then the check's own remediation, then a green rerun. |
-| NO GPU | **Injection only.** Every machine here has a card. | `qa-setup --check` on a CPU-only machine, then one short run: the selector should show GPU greyed out with a reason, and the run should complete on CPU with no user action. **This is the state most contributors will actually be in, so it is the most valuable one left to see live.** |
+| NO GPU | **Confirmed live** on this laptop 2026-09-01, by running a full Course 10 through `qa-web` with `CUDA_VISIBLE_DEVICES=-1` set in the launching shell. See below for what that does and does not prove. | Done, with one caveat. |
 
-Two of the four are now live, and one of those two was not in the original plan
-at all: the "present but not usable" state existed on the development machine
-the whole time and was being reported as OK.
+Three of the four are now live, and one of those three was not in the original
+plan at all: the "present but not usable" state existed on the development
+machine the whole time and was being reported as OK.
+
+### How NO GPU was confirmed, and what the method is worth
+
+`CUDA_VISIBLE_DEVICES=-1` in the shell that launches `qa-web` makes the runtime
+enumerate zero devices, which is the same thing the probe sees on a machine with
+no card. The whole path was exercised, end to end, with no code changed and no
+test double anywhere:
+
+- the probe reported MISSING with the optional wording, naming the reason
+- the sidebar and the run form both showed GPU unavailable, with that reason
+- the run completed on CPU with no intervention from the operator
+- the packet header read "requested cpu, decoded on cpu"
+- coverage 99.94 percent, 3 discrepancies, which is the CPU baseline
+
+**What this proves and what it does not.** It proves the probe, the selector,
+the fallback and the packet's own account of itself all behave correctly when
+the runtime reports no CUDA device. It does not prove the behaviour on a machine
+that has never had CUDA installed: there, the failure could be an import error
+or a missing driver library rather than a device count of zero, and those take
+different branches. A bare CPU-only laptop is still the real test and is
+scheduled for the colleague pilot. Recording the method here so that a later
+reader does not mistake a simulated state for a bare machine.
+
+VERSION MISMATCH remains injection only.
 
 ## D25. What the device change did to the known answer tests
 
@@ -878,3 +925,186 @@ does to conclusions, which is almost nothing. Findings are robust to the device;
 the numbers underneath them are not, and any future test that pins a confidence,
 a word count or a coverage figure to three decimal places will break the first
 time someone runs it on other hardware.
+
+## D26. Script sources: what a course's script is, and what a topic's state is
+
+The pipeline assumed one shape of delivery: a PowerPoint storyboard whose
+speaker notes are the narration, one topic per delivered audio file, and an mp4
+among the mp3s meaning a demo whose storyboard is an outline. Every step of that
+chain is now known to be wrong, and each was wrong in a way that produced a
+confident false answer rather than an error.
+
+**File type carries no information.** Topics normally arrive as mp4 and need
+demux, on both project types. The ingest module warned when a VENDOR course
+arrived as video; it fired on every correct delivery. A check that fires on the
+correct case is worse than no check, because people learn to scroll past it.
+The warning is gone and `expected_kind` now returns "any", kept only so a reader
+of an old `ingest.json` can see the claim was withdrawn rather than quietly
+changed.
+
+**A CGT course has no PowerPoint at all.** Its script is a Word document in the
+BUS Writing Template. The old code would have found no `.pptx`, halted, and told
+the operator to go and find a storyboard that does not exist.
+
+**"Demo" and "unscripted" are different facts.** A demo may be fully scripted
+(CGT always is), outlined in the deck (usually VENDOR), scripted in a freeform
+document of its own (occasionally VENDOR), or not scripted anywhere.
+
+So two separate concepts, deliberately not one:
+
+    source   a property of the course:  pptx | docx_bus
+    state    a property of a topic:     verbatim | outline | freeform | none
+
+`course.yaml` gains `script_source`, defaulted from `project_type` and stated
+rather than inferred, and a `topics` mapping for per-topic states.
+`unscripted_topics` is unchanged and still means outline-only; it is the
+shortest way to say the common VENDOR case and nothing here deprecates it.
+
+The script stage became a dispatcher. Every extractor emits the same per-topic
+structure, so `align.py`, `checks.py`, `artifacts.py` and `packet.py` are
+unchanged by any of this. `freeform` and `none` are applied as an overlay after
+the course-level extractor runs, so both extractors get them and neither knows
+about the other.
+
+### What the BUS extractor reads, and what it refuses to read
+
+Verified against a real delivery rather than assumed, and the assertions are in
+`tests/test_bus_template.py`:
+
+- **The SCRIPT column only.** OST is on-screen bullet text that nobody reads
+  aloud. Including it would produce a wall of false deletions in every topic of
+  every CGT course. The evidence that none leaks in is that every block's
+  extracted word count equals the count the author wrote in its own metadata
+  row, on all eleven blocks of the reference document.
+- **Scene headers are stripped from the alignment text and kept as tagged
+  non-narration spans**, with the position they held. They are not narrated, so
+  leaving them in would report each one as a deletion; deleting them outright
+  would mean a header the voice did read simply disappeared. Kept as spans, a
+  voiced header surfaces as an insertion, which is the correct answer.
+- **Interactivity placeholders are dropped and reported.** Two independent
+  signals, either sufficient: the template's own placeholder sentence, and a
+  block under 20 words whose title says interactivity. Both fire on the
+  reference document's topic 9. Dropping one is a silent decision about how many
+  topics a course has and shifts every later block onto the wrong audio file, so
+  the packet lists what was dropped and why.
+- **Blocks map to delivered files by order, never by the number in the TOPIC
+  heading**, because the heading numbers include the placeholder and the files
+  do not. A count mismatch halts with the same evidence contract as the pptx
+  mapper.
+- **The COURSE ID cell is cross-checked against the code from the filenames**,
+  after dropping the locale segment the filenames carry and the cell does not. A
+  mismatch halts: aligning a course against another course's script would report
+  every topic as a total narration failure.
+- **The Pronunciation Guide feeds `qa-terms`** with the author's stated
+  pronunciation attached, which is the one thing that command otherwise cannot
+  know. Empty in the reference document, and the extractor says so rather than
+  inventing rows.
+
+### The two checks that need no script
+
+A topic whose state is `none` is not skipped. It runs demux, transcription and
+artifacts as normal and the packet carries its full timestamped transcript, but
+everything alignment normally catches has to come from somewhere else or not at
+all. Two detectors in `qa/transcript_checks.py` are what a transcript alone can
+honestly support. Both produce listen items and neither can produce a defect,
+because with no script there is nothing to be wrong against.
+
+**Voiced symbols.** A synthetic voice reading `project_plan` literally says
+"project underscore plan", and the transcript then contains a perfectly ordinary
+word that is not a word. Course 10's topic 09 does this fourteen times and the
+packet had nowhere to say so. Reported grouped by term with every timestamp, so
+one listen settles all fourteen. Run on scripted topics too: it costs nothing,
+and a script containing an identifier says nothing about whether reading it out
+that way was intended. Never a defect, because narrators do say "underscore" on
+purpose.
+
+**Unverifiable boundary duplications.** The scripted path suppresses ASR
+segment-boundary duplications outright, and that is safe only because alignment
+has already proved the script has one word there. With no script that proof does
+not exist, so the same candidates are listed under their own heading instead of
+dropped. Every candidate is listed, not only the ones whose second copy decoded
+badly: Course 10's demo has one at p 0.958, and a confidence filter would have
+dropped it with nothing left that could find it again. Confidence is reported
+per site so a reader can triage by it, which is what it is good for.
+
+### The SaaS family, and the rule an equivalence has to follow
+
+GPU decode wrote "SAS" for "SaaS" at two sites in Course 10 topic 04 and
+reported them as substitutions. The narrator said "sass" both times.
+`EQUIVALENCES` now folds `SAS`, `IAS` and `PAS` into `SaaS`, `IaaS` and `PaaS`;
+casing is already folded before the table is consulted, so one row covers each.
+
+The standing rule this establishes: **an equivalence that absorbs a difference
+must be paired with a watchlist entry for the same term.** Absorbing it is
+correct, because the difference is orthography rather than speech, but it also
+means alignment will never mention that term again. Without the watchlist entry
+the pipeline has quietly stopped looking at a term it used to look at. All three
+are now on the `spisccc26` watchlist for exactly that reason.
+
+The predicted effect was that Course 10's discrepancy count would fall from 4 to
+2. It fell to 3, and the missing one is worth recording. One of the two SAS
+sites had been fused into a single substitution row together with a separate
+low-confidence insertion beside it. Removing the SaaS half leaves that insertion
+standing on its own, correctly, as the listen item it always was. So the
+equivalence did not only remove noise; it un-fused a real listen item that the
+noise had been hiding. Both SaaS sites are gone from the packet, which was the
+substantive claim.
+
+## D27. Two devices as two instruments, not one instrument twice
+
+**Recorded so the idea and its evidence survive. Not built.**
+
+D23 measured CPU and GPU disagreeing on about half a percent of tokens, and D25
+showed that almost nothing a person acts on moves as a result. The natural
+reading is that the disagreement is a nuisance. There is another reading.
+
+On a GPU machine a second decode costs minutes: Course 10 is 53 minutes of audio
+that decodes in about 5.5. Two devices are two independent instruments in
+exactly the sense the original two-transcriber design wanted and never got. A
+site both report is a defect. A site only one reports is a listen item. That is
+the old triangulation rebuilt on instruments that, unlike two LLM listeners,
+neither paraphrase nor truncate nor silently skip a file.
+
+The evidence is already in hand. Course 10, same audio, same model, same day:
+
+    CPU int8      3 discrepancies
+    GPU float16   4 discrepancies
+    shared        2, both at high confidence
+
+The two shared at high confidence are the real defects. The rest is decode
+noise, and the point is that the pair separates them without a human having to
+guess which is which. Course 11 gives the counterexample that makes it worth
+doing at all: GPU float16 caught a whole-sentence deletion in topic 02 that CPU
+int8 missed. See the addendum to D23.
+
+Against building it now: it doubles decode time on the only machine where that
+is cheap, it needs a second cache slot per topic, and the packet would need a
+third column throughout. None of that is hard; it is simply not the next thing.
+The reason to write it down is that the evidence for it is scattered across two
+runs on one afternoon, and in six months nobody will reconstruct it.
+
+## D28. Where finished packets go, and why they are never overwritten
+
+Working files and finished output had one home between them, inside the course
+folder in `%LOCALAPPDATA%`. That is right for the working files and wrong for
+the packets.
+
+Working files stay where they are: copied media, demuxed audio, the transcript
+cache and every intermediate live in `qa_work/` under the library. They are
+large, they are regenerable, and nobody opens them by hand.
+
+Finished packets move to an output folder, defaulting to `Documents\audio-qa`
+and settable in the sidebar. Two reasons, and the second is the important one.
+A person who has just run a course wants to attach the packet to a chat, and
+asking them to navigate into `AppData\Local` to find it is a bad answer.
+
+And packets are named by course, timestamp and device, and **never overwritten**:
+
+    it_spisccc26_10_enus_2026-09-01_1441_gpu-float16.md
+
+so the output folder is the run history. A before-fix packet and an after-fix
+packet sit side by side, and a CPU packet sits next to a GPU packet of the same
+course, which is what makes a claim like D23's checkable by anyone rather than
+only by whoever happened to run both that afternoon. The old naming was course
+plus date, so a second run on the same day overwrote the first silently, which
+is precisely the case where comparing them matters most.

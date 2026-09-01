@@ -311,16 +311,28 @@ AUTO = "auto"
 # can be met; a run that cannot use one says so rather than failing.
 TRANSCRIBE_SUPPORTS_GPU = True
 
-# Compute types for a GPU decode, best first. float16 is the usual choice on
-# any card since Turing; the int8 mixes are for older cards that lack fast
-# half precision. The one that is actually used is recorded, because per D21
-# compute type is in the cache fingerprint and device is not.
+# Compute types for a GPU decode, best first. float16 is the default wherever
+# the card offers it; the int8 mixes are the fallback for a card that cannot
+# hold it. The one that is actually used is recorded, because per D21 compute
+# type is in the cache fingerprint and device is not.
+#
+# There is no consistency argument for preferring int8 on GPU so that it
+# matches the CPU path. D23 held precision constant, ran GPU at int8, and it
+# still disagreed with CPU int8 on nine of thirteen topics: the device changes
+# the output on its own. So int8 on a card that can do float16 would buy
+# nothing and cost a third of the speed, and float16 was the run that caught a
+# whole-sentence deletion CPU missed. See D23 and D27.
 GPU_COMPUTE_PREFERENCE = ("float16", "int8_float16", "int8")
 CPU_COMPUTE = "int8"
 
 
 def gpu_compute_type(supported: list[str] | tuple[str, ...] | None = None) -> str:
-    """The best precision this card actually offers."""
+    """The best precision this card actually offers.
+
+    "Offers" is the runtime's own answer rather than a guess from the card's
+    name: a card that cannot hold float16 does not list it, and only that card
+    falls through to the int8 mixes.
+    """
     if supported is None:
         try:
             import ctranslate2

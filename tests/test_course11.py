@@ -2,10 +2,16 @@
 
 Course 11 is the first course other than Course 10 the pipeline has run, and it
 produced the evidence that motivated the watchlist layer. The ASR fails to hear
-the term SIEM at three of its fourteen sites, at confidences of 0.474, 0.282
-and 0.533. General alignment surfaced those incidentally, mixed into 29 other
-differences. The watchlist has to find them deliberately, and has to examine
-all fourteen sites rather than only the three that happened to deviate.
+the term SIEM in three of the thirteen topics, at low confidence. General
+alignment surfaced those incidentally, mixed into thirty other differences. The
+watchlist has to find them deliberately, and has to examine all fourteen sites
+rather than only the ones that happened to deviate.
+
+These tests assert which topics carry the problem and which site is worst, not
+how many sites there are or what confidence each one decoded at. D23 measured
+those figures moving between CPU and GPU; D25 is the standing instruction not
+to pin them. CPU int8 reports three misheard sites and GPU float16 four, and
+both agree on everything a person acts on.
 
 What the ASR heard at each site is pinned by digest rather than quoted, because
 this repository is public and transcripts of customer narration do not belong
@@ -51,42 +57,38 @@ def siem(watchlist) -> dict:
     return next(row for row in watchlist["terms"] if row["term"] == "SIEM")
 
 
-# The three sites, as the first full run measured them. Confidences are the
-# ASR's own and are asserted loosely enough to survive a rounding change but
-# tightly enough that a different decode would fail here. What was heard is
-# identified by digest; sites 01 and 13 share a digest because the ASR produced
-# the same wrong token at both, which is itself part of the expected result.
+# The three topics where SIEM is misheard, and the topic a listener should
+# reach for first. Not the site count, not a confidence, not the token that was
+# heard: those are the figures D23 measured moving between CPU and GPU, and D25
+# is the standing instruction not to pin them.
+#
+# CPU int8 finds three misheard sites, one per topic. GPU float16 finds four,
+# because topic 11 splits into two tokens where CPU produced one. Both decodes
+# agree on which topics carry the problem and on which site is worst, and those
+# are the claims that reach a person.
 #
 # GOLDEN VALUE STATUS: pending confirmation by ear, in the same way D5's tail
-# assertion was. The pipeline's claim is that all three are mishearings of a
+# assertion was. The pipeline's claim is that these are mishearings of a
 # correctly or incorrectly voiced SIEM, and only a human listening at these
 # timestamps can say which. If a listen finds the term voiced correctly at all
 # three, these stay as they are: the layer is allowed to route a false alarm to
 # a human, and is not allowed to miss one.
-HEARD_A = "507a9a8be3d145a8"  # sites 01 and 13, a three character token
-HEARD_B = "a6b46dd0d1ae5e86"  # site 11, a four character token
-
-KNOWN_SITES = [
-    {"topic": "01", "heard": HEARD_A, "confidence": 0.474, "start_s": 90.16},
-    {"topic": "11", "heard": HEARD_B, "confidence": 0.282, "start_s": 46.65},
-    {"topic": "13", "heard": HEARD_A, "confidence": 0.533, "start_s": 64.57},
-]
+MISHEARD_TOPICS = {"01", "11", "13"}
+WORST_TOPIC = "11"
 
 
-def test_siem_is_misheard_at_the_three_known_sites(siem):
+def test_siem_is_misheard_in_the_three_known_topics(siem):
     misheard = [s for s in siem["sites"] if s["status"] == "MISHEARD"]
-    assert len(misheard) == 3
+    assert len(misheard) >= 3
+    assert {s["topic"] for s in misheard} == MISHEARD_TOPICS
 
-    for site, expected in zip(misheard, KNOWN_SITES):
-        assert site["topic"] == expected["topic"], expected
-        assert digest(site["heard"]) == expected["heard"], expected
-        assert site["confidence"] == pytest.approx(expected["confidence"], abs=0.01)
-        assert site["start_s"] == pytest.approx(expected["start_s"], abs=0.5), expected
-
-    # Two of the three sites produced the same wrong token, one produced a
-    # different one. A decode that changed what it heard anywhere fails above.
-    heard = [digest(s["heard"]) for s in misheard]
-    assert heard[0] == heard[2] != heard[1]
+    for site in misheard:
+        # Whatever was heard, it was not the expected spelling; that is what
+        # MISHEARD means, and the digest proves it without quoting customer
+        # narration into a public repository.
+        assert digest(site["heard"]) != digest(siem["term"])
+        assert site["start_s"] is not None
+        assert 0.0 <= site["confidence"] <= 1.0
 
 
 def test_every_siem_site_is_examined_not_only_the_deviating_ones(siem):
@@ -97,26 +99,25 @@ def test_every_siem_site_is_examined_not_only_the_deviating_ones(siem):
     everywhere". The watchlist can.
     """
     assert siem["occurrences"] == 14
-    assert siem["matched"] == 11
-    assert siem["misheard"] == 3
+    assert siem["misheard"] >= 3
+    assert siem["matched"] >= 10
     assert siem["matched"] + siem["low_confidence"] + siem["misheard"] == siem["occurrences"]
 
 
 def test_the_worst_site_is_the_least_confident_one(siem):
     """What a human should listen to first."""
-    assert siem["worst"]["topic"] == "11"
-    assert digest(siem["worst"]["heard"]) == HEARD_B
-    assert siem["worst"]["confidence"] == pytest.approx(0.282, abs=0.01)
+    assert siem["worst"]["topic"] == WORST_TOPIC
+    assert digest(siem["worst"]["heard"]) != digest(siem["term"])
     assert siem["worst"]["confidence"] == min(
         s["confidence"] for s in siem["sites"] if s["status"] != "MATCH"
     )
 
 
-def test_each_misheard_site_routes_to_a_listen_item(watchlist):
+def test_each_misheard_site_routes_to_a_listen_item(watchlist, siem):
     items = [i for i in watchlist["listen_items"] if i["term"] == "SIEM"]
-    assert len(items) == 3
+    assert len(items) == siem["misheard"] + siem["low_confidence"]
     assert all(i["tag"] == "pronunciation candidate" for i in items)
-    assert {i["topic"] for i in items} == {"01", "11", "13"}
+    assert {i["topic"] for i in items} == MISHEARD_TOPICS
     # Every one carries a timestamp, because a listen item without one is not
     # actionable.
     assert all(i["start_s"] is not None for i in items)
