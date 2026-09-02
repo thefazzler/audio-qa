@@ -328,36 +328,78 @@ def _script_controls(
             "and a demo may be scripted, outlined, or not scripted at all."
         )
 
-    options = [VERBATIM, OUTLINE, NONE, FREEFORM]
+    # Two multiselects and a picker, rather than one dropdown per topic. A
+    # thirteen-topic course produced thirteen dropdowns that all said the same
+    # word, and the exceptions are what the form is for: naming the two or
+    # three topics that are not verbatim is a shorter question than answering
+    # "verbatim?" thirteen times.
+    topics = selection.topics
+    was = {topic: state for topic, (state, _) in remembered.items()}
+
+    outline = st.multiselect(
+        "Outline only",
+        options=topics,
+        default=[t for t in topics if was.get(t) == OUTLINE],
+        key="script-outline",
+        help=(
+            "The script document describes these topics rather than scripting "
+            "them. They are excluded from word-level alignment and their "
+            "transcripts run at full length in the packet."
+        ),
+    )
+    none = st.multiselect(
+        "No script at all",
+        options=[t for t in topics if t not in outline],
+        default=[t for t in topics if was.get(t) == NONE],
+        key="script-none",
+        help=(
+            "Nothing in the delivery says what these topics were supposed to "
+            "say. They are still transcribed, measured and reported; what they "
+            "cannot have is a comparison."
+        ),
+    )
+    spoken_for = set(outline) | set(none)
+    freeform = st.multiselect(
+        "Scripted in a document of their own",
+        options=[t for t in topics if t not in spoken_for],
+        default=[t for t in topics if was.get(t) == FREEFORM and t not in spoken_for],
+        key="script-freeform",
+        help="For the occasional vendor demo that arrives with its own script.",
+    )
+
     chosen: dict[str, tuple[str, str]] = {}
-    for topic in selection.topics:
-        was, was_file = remembered.get(topic, (VERBATIM, ""))
-        columns = st.columns([1, 2, 3])
-        columns[0].write(f"`{topic}`")
-        state = columns[1].selectbox(
-            "script",
-            options=options,
-            index=options.index(was) if was in options else 0,
-            key=f"script-{topic}",
-            label_visibility="collapsed",
+    chosen.update({topic: (OUTLINE, "") for topic in outline})
+    chosen.update({topic: (NONE, "") for topic in none})
+
+    for topic in freeform:
+        if not candidates:
+            st.warning(
+                f"Topic {topic} is marked as having its own script, but no "
+                "document was selected that could be it. Add a .docx or .txt "
+                "in step 1."
+            )
+            chosen[topic] = (FREEFORM, "")
+            continue
+        remembered_file = remembered.get(topic, (FREEFORM, ""))[1]
+        chosen[topic] = (
+            FREEFORM,
+            st.selectbox(
+                f"Script for topic {topic}",
+                options=candidates,
+                index=(
+                    candidates.index(remembered_file)
+                    if remembered_file in candidates
+                    else 0
+                ),
+                key=f"script-file-{topic}",
+            ),
         )
-        document = ""
-        if state == FREEFORM:
-            if candidates:
-                document = columns[2].selectbox(
-                    "document",
-                    options=candidates,
-                    index=candidates.index(was_file) if was_file in candidates else 0,
-                    key=f"script-file-{topic}",
-                    label_visibility="collapsed",
-                )
-            else:
-                columns[2].caption(
-                    "No document was selected that could be this topic's script. "
-                    "Add a .docx or .txt above."
-                )
-        if state != VERBATIM:
-            chosen[topic] = (state, document)
+
+    verbatim = [t for t in topics if t not in chosen]
+    st.caption(
+        f"{len(verbatim)} of {len(topics)} topics verbatim"
+        + (f": {', '.join(verbatim)}" if verbatim else "")
+    )
     return chosen
 
 

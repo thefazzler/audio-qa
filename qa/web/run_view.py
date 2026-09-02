@@ -93,6 +93,17 @@ def start_panel() -> None:
         st.caption(note)
     st.caption(DEVICE_NOTE)
 
+    if force:
+        # The checkbox keeps its value between runs, so somebody who forced
+        # once forces every run afterwards and pays a full decode each time
+        # with nothing to tell them why it got slow. Say it at the moment of
+        # the click, where the cost is about to be incurred.
+        st.warning(
+            "Re-transcribe everything is on: every topic will be decoded from "
+            "scratch, tens of minutes on CPU and several on GPU, even for files "
+            "that have not changed. This stays on until you turn it off."
+        )
+
     if st.button("Start run", type="primary"):
         try:
             status = submit(
@@ -143,6 +154,13 @@ def _numbers(status) -> None:
         columns[0].caption(
             f"{status.reused_count} reused, unchanged since the last run"
         )
+    # "Time remaining: measuring" on a finished run is the instrument saying
+    # something untrue about itself, which is the whole class of bug this
+    # session was about. A run that has ended has no time remaining.
+    if status.state in {DONE, FAILED}:
+        columns[1].metric("Took", _clock(status.elapsed_s))
+        return
+
     columns[1].metric(
         "Time remaining",
         _clock(status.eta_s) if status.eta_s is not None else "measuring",
@@ -228,6 +246,12 @@ def _live(job_id: str) -> None:
             "Finished. The checks, the listen list and the packet are on the "
             "Results tab."
         )
+    if not should_refresh(status):
+        # The fragment redraws itself; the run picker above it does not, so its
+        # label still says "starting" for a run that has finished. One rerun on
+        # the transition catches the rest of the page up. It cannot loop: the
+        # rerun renders a finished run, which arms no fragment.
+        st.rerun()
 
 
 def live_panel(job_id: str) -> None:
