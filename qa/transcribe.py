@@ -604,6 +604,14 @@ def run_transcribe(
                 "decode_seconds": round(transcript.decode_seconds, 2),
                 "anomaly_count": len(transcript.anomalies),
                 "status": "transcribed",
+                # When and where this decode actually happened. A later run
+                # that reuses this row carries these forward, which is how the
+                # packet can say the decode was not its own instead of
+                # reporting somebody else's wall time as a measurement of
+                # itself.
+                "decoded_at": time.time(),
+                "decoded_on": f"{settings.device}-{settings.compute_type}",
+                "decoded_machine": _machine_name(),
             }
         )
 

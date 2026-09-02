@@ -9,6 +9,7 @@ comparison cannot be made at all. See D28.
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -36,23 +37,58 @@ def transcripts(device: str = "cuda", compute: str = "float16") -> dict:
 # Naming
 # ---------------------------------------------------------------------------
 
+def at(text: str) -> datetime:
+    return datetime.strptime(text, "%Y-%m-%d %H:%M")
+
+
 def test_a_packet_is_named_for_the_run_that_made_it():
-    stem = packet_stem(manifest(), transcripts(), "2026-09-01", "1441")
+    stem = packet_stem(manifest(), transcripts(), at("2026-09-01 14:41"))
     assert stem == "it_spisccc26_10_enus_2026-09-01_1441_gpu-float16"
 
 
 def test_the_device_is_written_the_way_people_say_it():
     """"cuda" is the runtime's word. This name is read by people."""
     assert DEVICE_NAMES["cuda"] == "gpu"
-    stem = packet_stem(manifest(), transcripts("cpu", "int8"), "2026-09-01", "0902")
+    stem = packet_stem(manifest(), transcripts("cpu", "int8"), at("2026-09-01 09:02"))
     assert stem.endswith("_cpu-int8")
 
 
 def test_two_runs_of_one_course_on_one_day_do_not_collide():
     """The case the old course-plus-date naming overwrote silently."""
-    morning = packet_stem(manifest(), transcripts("cpu", "int8"), "2026-09-01", "0902")
-    evening = packet_stem(manifest(), transcripts(), "2026-09-01", "1441")
+    morning = packet_stem(manifest(), transcripts("cpu", "int8"), at("2026-09-01 09:02"))
+    evening = packet_stem(manifest(), transcripts(), at("2026-09-01 14:41"))
     assert morning != evening
+
+
+def test_both_halves_of_the_name_come_from_one_clock():
+    """The date used to come from --date and the time from the packet write.
+
+    A re-run of the August course on the first of September produced
+    "..._2026-08-27_1624_..." : two different days in one name, neither of them
+    the run's own.
+    """
+    started = at("2026-09-01 16:24")
+    stem = packet_stem(manifest(), transcripts(), started)
+    assert "2026-09-01_1624" in stem
+    assert "2026-08-27" not in stem
+
+
+def test_the_stated_date_and_the_filename_may_legitimately_differ(tmp_path):
+    """A re-run of an old course says so in the header and is named for today."""
+    from qa.packet import run_packet
+
+    course = _plant_course(tmp_path)
+    destination = tmp_path / "packets"
+    result = run_packet(
+        course,
+        run_date="2026-08-27",
+        output_dir=destination,
+        started_at=at("2026-09-01 16:24").timestamp(),
+    )
+    assert Path(result["path"]).name.startswith(
+        "it_spisccc26_10_enus_2026-09-01_1624_"
+    )
+    assert "| Date | 2026-08-27 |" in Path(result["path"]).read_text(encoding="utf-8")
 
 
 def test_a_packet_never_overwrites_one_that_is_already_there(tmp_path):

@@ -15,7 +15,16 @@ from pathlib import Path
 import streamlit as st
 
 from qa.device import DEVICE_NOTE, default_device, effective_device, probe
-from qa.jobs import DONE, FAILED, RUNNING, FileJobStore, JobError, submit
+from qa.jobs import (
+    DONE,
+    FAILED,
+    PENDING,
+    RUNNING,
+    FileJobStore,
+    JobError,
+    resolve,
+    submit,
+)
 from qa.library import list_courses, resolve_library
 from qa.util import QAError
 
@@ -112,7 +121,10 @@ def _headline(status) -> None:
         if status.error:
             st.code(status.error)
     else:
-        st.info("Queued")
+        # Not "Queued". Nothing is queued here: there is one run and it is
+        # starting a process. "Queued" reads as waiting for something else to
+        # finish, which is what a stuck progress view already looked like.
+        st.info("Starting the run...")
 
 
 def _numbers(status) -> None:
@@ -198,8 +210,9 @@ def _draw(status) -> None:
 @st.fragment(run_every=REFRESH_S)
 def _live(job_id: str) -> None:
     """Only this fragment reruns on the timer, so the page stays still."""
+    store = _store()
     try:
-        status = _store().read(job_id)
+        status = resolve(store.read(job_id), store)
     except JobError as exc:
         st.error(str(exc))
         return
@@ -217,15 +230,41 @@ def live_panel(job_id: str) -> None:
     The intake page uses this so that starting a run lands on the run, rather
     than on a form that looks idle.
     """
+    store = _store()
     try:
-        status = _store().read(job_id)
+        status = resolve(store.read(job_id), store)
     except JobError as exc:
         st.error(str(exc))
         return
-    if status.state == RUNNING:
-        _live(job_id)
-    else:
+    _panel(status)
+
+
+def should_refresh(status) -> bool:
+    """Whether this run could still change, and so needs the live fragment.
+
+    The refreshing fragment used to be armed only for RUNNING. A job submitted
+    a moment ago is PENDING, because the subprocess has not started yet and has
+    not flipped it, so the page rendered once, statically, and never looked
+    again: it said "Queued / Reading the delivered files..." while the run went
+    all the way through and wrote its packet. PENDING is the state where the
+    refresh matters most, and was the one state without it.
+
+    A predicate rather than a branch inside the drawing code, because it is the
+    thing that was wrong and a test can hold it without a browser.
+    """
+    return status.state not in {DONE, FAILED}
+
+
+def _panel(status) -> None:
+    """Draw a run, refreshing on a timer while it could still change."""
+    if not should_refresh(status):
         _draw(status)
+        return
+    _live(status.id)
+    st.caption(
+        "This run is a separate process. Closing this tab, or the app, does "
+        "not stop it."
+    )
 
 
 def run_label(job) -> str:
@@ -243,7 +282,13 @@ def run_label(job) -> str:
         if job.started_at
         else "not started"
     )
-    device = job.device_used or job.device_requested or "device unknown"
+    # A run that has not reached the transcribe stage does not know its device
+    # yet, and "device unknown · 0s" describes the label's ignorance rather
+    # than the run's state. Say what is happening instead.
+    if job.state == PENDING and not job.device_used:
+        return " · ".join([course, started, "starting"])
+
+    device = job.device_used or job.device_requested or "device not recorded"
     if job.compute_type:
         device = f"{device} {job.compute_type}"
 
@@ -270,7 +315,7 @@ def run_label(job) -> str:
 
 def watch_panel() -> None:
     store = _store()
-    jobs = store.list()
+    jobs = [resolve(job, store) for job in store.list()]
     if not jobs:
         return
 
@@ -301,13 +346,6 @@ def watch_panel() -> None:
     job_id = labels[chosen]
     st.session_state.watching = job_id
 
-    status = store.read(job_id)
+    status = resolve(store.read(job_id), store)
     st.caption(f"Run `{status.id}`, course folder `{status.course_dir}`")
-    if status.state == RUNNING:
-        _live(job_id)
-        st.caption(
-            "This run is a separate process. Closing this tab, or the app, does "
-            "not stop it."
-        )
-    else:
-        _draw(status)
+    _panel(status)

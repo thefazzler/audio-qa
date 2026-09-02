@@ -61,6 +61,67 @@ class JobError(QAError):
 
 
 # ---------------------------------------------------------------------------
+# Is that process still there?
+# ---------------------------------------------------------------------------
+# Twenty lines against a dependency, the same trade library.py makes. The
+# alternative to asking the operating system is a timeout, and a timeout
+# answers "has it been quiet for a while", which is not the question.
+
+def process_alive(pid: int) -> bool:
+    """Whether the process that was running a job still exists.
+
+    Deliberately biased towards saying yes. A recycled pid makes a dead job
+    look alive, which costs a wait; the opposite error declares a running
+    course dead and invites a second run on the same folder, which is the one
+    thing the in-progress guard exists to prevent.
+
+    Never uses os.kill on Windows: there, os.kill with a signal other than the
+    two console events calls TerminateProcess, so the liveness probe would kill
+    the run it was asking about.
+    """
+    if not pid:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+
+        SYNCHRONIZE = 0x00100000
+        STILL_RUNNING = 0x00000102  # WAIT_TIMEOUT: handle not signalled yet
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, int(pid))
+        if not handle:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(handle, 0) == STILL_RUNNING
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Somebody else's process now. Not ours, but it is alive, and the
+        # cautious reading is that we cannot prove our run has ended.
+        return True
+    except OSError:
+        return True
+    return True
+
+
+def wrote_a_packet(course_dir: str | Path, since: float) -> bool:
+    """Whether a packet was produced for this course after the run started.
+
+    The evidence that a run finished does not have to come from the run. It
+    reached the last stage and wrote a file; that is a fact about the world,
+    and it outranks a status record that never got its final write.
+    """
+    marker = Path(course_dir) / "qa_out" / "packet_index.json"
+    try:
+        return marker.stat().st_mtime >= (since - 1.0)
+    except OSError:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # The record
 # ---------------------------------------------------------------------------
 
@@ -104,6 +165,10 @@ class JobStatus:
     compute_type: str = ""
     reviewed_by: str = ""
     fallback_reason: str = ""
+    # The process actually doing the work. A record is a claim about a run;
+    # this is how a reader checks the claim against the operating system
+    # instead of against a timeout. 0 on records written before this existed.
+    pid: int = 0
     eta_s: float | None = None
     eta_basis: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -198,6 +263,22 @@ class FileJobStore:
 
     def path(self, job_id: str) -> Path:
         return self.root / f"{job_id}.json"
+
+    def log_path(self, job_id: str) -> Path:
+        """Where the run's own output went.
+
+        A detached run used to write to DEVNULL, so a process that died before
+        it could record why left nothing at all behind. Whatever it managed to
+        say is the only account of that failure there will ever be.
+        """
+        return self.root / f"{job_id}.log"
+
+    def tail(self, job_id: str, lines: int = 25) -> str:
+        try:
+            text = self.log_path(job_id).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        return "\n".join(text.splitlines()[-lines:]).strip()
 
     def write(self, status: JobStatus) -> None:
         status.updated_at = time.time()
@@ -504,6 +585,9 @@ def run_job(job_id: str, store: JobStore | None = None) -> int:
     cli_module._ONLY_TOPICS = options.get("topics")
     cli_module._RUN_DATE = options.get("date")
     cli_module._OUTPUT_DIR = options.get("output")
+    # The packet is named for when the run began, not for when its last stage
+    # finished, so the job's own start time is what the stage must see.
+    cli_module._RUN_STARTED = status.started_at or time.time()
 
     watcher.start()
     try:
@@ -526,6 +610,67 @@ def run_job(job_id: str, store: JobStore | None = None) -> int:
         store.write(status)
 
     return 0 if status.state == DONE else 1
+
+
+ABANDONED = (
+    "The run's process is gone and it never recorded how it ended. "
+    "Whatever it managed to print before it died is below."
+)
+
+
+def resolve(status: JobStatus, store: JobStore | None = None) -> JobStatus:
+    """What is actually true about a job now, rather than what it last wrote.
+
+    A status record is a claim a process makes about itself, and a process that
+    dies stops updating its claim. Read literally, a killed run says PENDING or
+    RUNNING for ever, and every reader of it waits for something that is not
+    coming. That is the same class of failure as a transcriber that truncates a
+    file and does not say so, which is what this whole codebase is built
+    against, so the record is checked rather than believed.
+
+    Three outcomes, in order of what the evidence supports:
+
+      the process is alive          nothing to correct; it is still running
+      gone, but a packet exists     it finished and lost its last write
+      gone, with no packet          it died; say so, with what it printed
+
+    Heals the record when it corrects one, so the picker, the progress view and
+    the in-progress guard cannot disagree with each other about one run.
+    """
+    if status.state in {DONE, FAILED}:
+        return status
+    if process_alive(status.pid):
+        return status
+    if status.pid == 0 and status.active:
+        # A record written before pids were tracked, or one whose process has
+        # not been spawned yet. Fall back to the timeout it was written under.
+        return status
+
+    if wrote_a_packet(status.course_dir, status.started_at):
+        status.state = DONE
+        status.finished_at = status.finished_at or time.time()
+        note = (
+            "This run finished and produced a packet, but its process ended "
+            "before it could record that. The packet is the evidence."
+        )
+        if note not in status.warnings:
+            status.warnings.append(note)
+    else:
+        status.state = FAILED
+        status.finished_at = status.finished_at or time.time()
+        printed = store.tail(status.id) if store is not None else ""
+        status.error = status.error or (
+            ABANDONED + (f"\n\n{printed}" if printed else "\n\n(it printed nothing)")
+        )
+
+    if store is not None:
+        try:
+            store.write(status)
+        except OSError:
+            # Healing the record is a convenience. Reporting the truth to the
+            # caller is not, and must not depend on the disk being writable.
+            pass
+    return status
 
 
 def _reviewer(course_dir: Path) -> str:
@@ -570,13 +715,20 @@ def submit(
     # and a second run on the same folder both re-transcribed the whole course
     # and neither finished.
     for existing in store.list():
-        if existing.active and Path(existing.course_dir) == course_dir:
-            raise JobError(
-                f"A run for this course is already in progress ({existing.id}, "
-                f"{existing.stage or 'starting'}).\n"
-                "  Wait for it to finish, or watch it from the Runs list. Two "
-                "runs on one course folder would overwrite each other."
-            )
+        if Path(existing.course_dir) != course_dir:
+            continue
+        # Against the process, not against the record. A job whose process has
+        # died still claims to be running, and refusing a new run on the
+        # strength of a dead one leaves the course unrunnable until somebody
+        # deletes a file they have never heard of.
+        if resolve(existing, store).state in {DONE, FAILED}:
+            continue
+        raise JobError(
+            f"A run for this course is already in progress ({existing.id}, "
+            f"{existing.stage or 'starting'}).\n"
+            "  Wait for it to finish, or watch it from the Runs list. Two "
+            "runs on one course folder would overwrite each other."
+        )
 
     status = JobStatus(
         id=uuid.uuid4().hex[:12],
@@ -600,11 +752,23 @@ def submit(
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
             subprocess, "DETACHED_PROCESS", 0
         )
+    # Everything the run prints goes to a file rather than to DEVNULL. A
+    # detached process that dies before it can record why used to leave nothing
+    # at all behind, and "it failed" with no reason is barely better than the
+    # failure itself.
+    log = getattr(store, "log_path", None)
+    sink = subprocess.DEVNULL
+    if log is not None:
+        try:
+            sink = open(log(status.id), "wb")
+        except OSError:
+            sink = subprocess.DEVNULL
+
     try:
-        subprocess.Popen(
+        process = subprocess.Popen(
             command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=sink,
+            stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             creationflags=creationflags,
             start_new_session=(sys.platform != "win32"),
@@ -616,7 +780,14 @@ def submit(
         status.error = f"Could not start the run: {exc}"
         store.write(status)
         raise JobError(status.error) from exc
+    finally:
+        if sink is not subprocess.DEVNULL:
+            sink.close()
 
+    # Recorded before returning, so the page that is about to render this run
+    # can already check it against the operating system.
+    status.pid = process.pid
+    store.write(status)
     return status
 
 

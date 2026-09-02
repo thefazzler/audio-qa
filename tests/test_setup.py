@@ -432,7 +432,8 @@ def test_the_smoke_test_passes_end_to_end(tmp_path):
     """Installed and works are different claims. This is the second one."""
     passed, detail = smoke_test(tmp_path)
     assert passed, detail
-    assert "it_smoke_01_enus_2026-01-01" in detail
+    # Named for when the run happened, not for the date the packet states.
+    assert "it_smoke_01_enus_" in detail
     assert detail.endswith(".md")
 
 

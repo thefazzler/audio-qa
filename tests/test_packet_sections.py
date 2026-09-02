@@ -137,14 +137,23 @@ def test_an_old_manifest_without_a_source_still_names_its_document():
     assert _script_source_line({}) == "not recorded"
 
 
+def decoded(duration: float, seconds: float, **extra) -> dict:
+    row = {"duration_s": duration, "decode_seconds": seconds, "status": "transcribed"}
+    row.update(extra)
+    return row
+
+
+def reused(duration: float, seconds: float, **extra) -> dict:
+    row = {"duration_s": duration, "decode_seconds": seconds, "status": "current"}
+    row.update(extra)
+    return row
+
+
 def test_the_decode_row_carries_wall_time_rate_and_machine():
     line = _decode_line(
         {
             "machine": "Monster-MSI (Windows)",
-            "topics": [
-                {"duration_s": 3000.0, "decode_seconds": 300.0},
-                {"duration_s": 600.0, "decode_seconds": 60.0},
-            ],
+            "topics": [decoded(3000.0, 300.0), decoded(600.0, 60.0)],
         }
     )
     assert "6.0 min to decode 60.0 min of audio" in line
@@ -152,10 +161,49 @@ def test_the_decode_row_carries_wall_time_rate_and_machine():
     assert "Monster-MSI (Windows)" in line
 
 
-def test_a_run_that_decoded_nothing_says_that_rather_than_dividing_by_zero():
-    line = _decode_line({"topics": [{"duration_s": 60.0, "decode_seconds": 0.0}]})
+def test_a_run_that_decoded_nothing_reports_reuse_not_somebody_elses_wall_time():
+    """The header read "4.7 min to decode 53.1 min" for a stage that took 1.7 s.
+
+    Those numbers were real; they belonged to an earlier run. Presented as this
+    run's own measurement they are false, and they are exactly the sort of
+    figure somebody quotes later.
+    """
+    import time
+
+    when = time.time() - 3600
+    line = _decode_line(
+        {
+            "machine": "Monster-MSI (Windows)",
+            "topics": [
+                reused(3000.0, 300.0, decoded_at=when, decoded_on="cuda-float16"),
+                reused(600.0, 60.0, decoded_at=when, decoded_on="cuda-float16"),
+            ],
+        }
+    )
     assert "no decode this run" in line
-    assert "not recorded" in line
+    assert "2 transcripts reused" in line
+    assert "cuda-float16" in line
+    assert "min to decode" not in line
+    assert "realtime" not in line
+
+
+def test_a_partial_re_decode_says_how_much_of_the_course_it_covered():
+    line = _decode_line(
+        {
+            "machine": "a laptop",
+            "topics": [
+                decoded(600.0, 60.0),
+                reused(3000.0, 300.0, decoded_at=1.0, decoded_on="cpu-int8"),
+            ],
+        }
+    )
+    assert "1.0 min to decode 10.0 min of audio" in line
+    assert "1 topic of 2 reused" in line
+    assert "50.0 min not decoded this run" in line
+
+
+def test_a_run_with_no_transcripts_at_all_does_not_divide_by_zero():
+    assert "no decode this run" in _decode_line({"topics": []})
 
 
 # ---------------------------------------------------------------------------

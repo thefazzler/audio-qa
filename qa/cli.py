@@ -104,13 +104,26 @@ def _transcribe(course_dir: Path, force: bool) -> dict:
 
 
 def _transcribe_summary(index: dict) -> str:
-    words = sum(t["word_count"] for t in index["topics"])
-    anomalies = sum(t["anomaly_count"] for t in index["topics"])
-    decode = sum(t["decode_seconds"] for t in index["topics"])
-    return (
-        f"{len(index['topics'])} topics, {words} words, {anomalies} anomalies, "
-        f"{index['model']}, {decode / 60.0:.1f} min decode"
-    )
+    """What this run did, not what the transcripts on disk cost to make.
+
+    The line used to sum every row's decode time, so a stage that finished in
+    1.7 seconds reported "4.7 min decode" next to its own elapsed time on the
+    same row. The reader is entitled to assume a stage summary describes the
+    stage that just ran.
+    """
+    topics = index["topics"]
+    words = sum(t["word_count"] for t in topics)
+    anomalies = sum(t["anomaly_count"] for t in topics)
+    fresh = [t for t in topics if t.get("status") == "transcribed"]
+    decode = sum(t["decode_seconds"] for t in fresh)
+
+    head = f"{len(topics)} topics, {words} words, {anomalies} anomalies, {index['model']}"
+    if not fresh:
+        return f"{head}, nothing decoded, {len(topics)} transcripts reused"
+    tail = f"{len(fresh)} decoded in {decode / 60.0:.1f} min"
+    if len(fresh) < len(topics):
+        tail += f", {len(topics) - len(fresh)} reused"
+    return f"{head}, {tail}"
 
 
 def _align(course_dir: Path, force: bool) -> dict:
@@ -167,7 +180,11 @@ def _packet(course_dir: Path, force: bool) -> dict:
     from .packet import run_packet
 
     return run_packet(
-        course_dir, force=force, run_date=_RUN_DATE, output_dir=_OUTPUT_DIR
+        course_dir,
+        force=force,
+        run_date=_RUN_DATE,
+        output_dir=_OUTPUT_DIR,
+        started_at=_RUN_STARTED,
     )
 
 
@@ -194,6 +211,10 @@ _ASR_OVERRIDES: dict = {}
 _ONLY_TOPICS: list[str] | None = None
 _RUN_DATE: str | None = None
 _OUTPUT_DIR: str | None = None
+# Wall clock time this run began. The packet's filename is built from it, so
+# that both halves of the name come from one clock and both describe the run
+# rather than the moment the last stage happened to finish. See D28.
+_RUN_STARTED: float | None = None
 
 STAGE_NAMES = tuple(s.name for s in STAGES)
 
@@ -221,6 +242,9 @@ def run(course_dir: Path, only: str | None, force: bool) -> int:
             f"Course folder does not exist: {course_dir}\n"
             "  Expected a folder holding course.yaml, one .pptx and audio/."
         )
+
+    global _RUN_STARTED
+    _RUN_STARTED = _RUN_STARTED or time.time()
 
     selected = [s for s in STAGES if only is None or s.name == only]
     rows: list[tuple[str, str, float]] = []
@@ -296,7 +320,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--date",
         metavar="YYYY-MM-DD",
-        help="packet date, overriding today; keeps golden tests reproducible",
+        help=(
+            "the date the packet states about itself, overriding today; keeps "
+            "golden tests reproducible. Does not name the file: that is built "
+            "from when the run started"
+        ),
     )
     parser.add_argument(
         "--topic",

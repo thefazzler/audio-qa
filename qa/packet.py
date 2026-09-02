@@ -108,18 +108,58 @@ def _decode_line(transcripts: dict) -> str:
     These were only ever on a stats panel in the web interface, which is not
     where anyone reads a finished run six months later. "23 minutes to 4" was
     written down nowhere.
+
+    A run that decoded nothing must not report the decode it inherited. The
+    header read "4.7 min to decode 53.1 min of audio (11.20x realtime)" for a
+    stage that took 1.7 seconds, because the numbers came from transcripts a
+    previous run had produced. Presented as this run's own measurement that is
+    simply false, and it is exactly the sort of number somebody later quotes.
     """
     rows = transcripts.get("topics") or []
-    decode = sum(row.get("decode_seconds") or 0.0 for row in rows)
-    audio = sum(row.get("duration_s") or 0.0 for row in rows)
     machine = transcripts.get("machine") or "not recorded"
-    if not decode:
-        return f"no decode this run, transcripts reused; on {machine}"
-    rate = f"{audio / decode:.2f}x realtime" if audio else "rate not measurable"
-    return (
-        f"{decode / 60.0:.1f} min to decode {audio / 60.0:.1f} min of audio "
+    fresh = [row for row in rows if row.get("status") == "transcribed"]
+    audio = sum(row.get("duration_s") or 0.0 for row in rows)
+
+    if not fresh:
+        return _reused_line(rows, machine)
+
+    decode = sum(row.get("decode_seconds") or 0.0 for row in fresh)
+    fresh_audio = sum(row.get("duration_s") or 0.0 for row in fresh)
+    rate = (
+        f"{fresh_audio / decode:.2f}x realtime" if decode and fresh_audio else "rate not measurable"
+    )
+    line = (
+        f"{decode / 60.0:.1f} min to decode {fresh_audio / 60.0:.1f} min of audio "
         f"({rate}), on {machine}"
     )
+    if len(fresh) < len(rows):
+        # A partial re-decode: some topics changed, the rest were kept. Say how
+        # much of the course the timing above actually covers.
+        line += (
+            f". {_count(len(rows) - len(fresh), 'topic')} of {len(rows)} reused, "
+            f"{(audio - fresh_audio) / 60.0:.1f} min not decoded this run"
+        )
+    return line
+
+
+def _reused_line(rows: list[dict], machine: str) -> str:
+    """A run that decoded nothing, described as what it was."""
+    when = [row.get("decoded_at") for row in rows if row.get("decoded_at")]
+    where = sorted({row.get("decoded_on") for row in rows if row.get("decoded_on")})
+    machines = sorted(
+        {row.get("decoded_machine") for row in rows if row.get("decoded_machine")}
+    )
+
+    line = f"no decode this run; all {_count(len(rows), 'transcript')} reused"
+    if when:
+        stamp = datetime.fromtimestamp(max(when)).strftime("%Y-%m-%d %H:%M")
+        line += f", last decoded {stamp}"
+    if where:
+        line += f" at {', '.join(w for w in where if w)}"
+    on = machines or ([machine] if machine != "not recorded" else [])
+    if on:
+        line += f", on {', '.join(m for m in on if m)}"
+    return line
 
 
 def _device_line(transcripts: dict) -> str:
@@ -675,19 +715,26 @@ def build_packet(
 DEVICE_NAMES = {"cuda": "gpu", "cpu": "cpu"}
 
 
-def packet_stem(manifest: dict, transcripts: dict, stamp: str, clock: str) -> str:
-    """Course, timestamp and device, so a packet names the run that made it.
+def packet_stem(manifest: dict, transcripts: dict, started: datetime) -> str:
+    """Course, run start and device, so a packet names the run that made it.
 
     The old name was course plus date, so a second run on the same day
     overwrote the first silently. That is precisely the case where comparing
     the two matters most: before a fix and after it, or CPU against GPU. See
     D28.
+
+    One clock, deliberately. The first version took the date from `--date` and
+    the time of day from the moment the packet was written, so a re-run of an
+    old course produced `..._2026-08-27_1624_...` on the first of September:
+    two different days in one name, neither of them the run's. Both halves now
+    come from the run's start.
     """
     settings = transcripts.get("settings") or {}
     device = transcripts.get("device_used") or settings.get("device") or "cpu"
     compute = settings.get("compute_type") or "unknown"
     label = DEVICE_NAMES.get(device, device)
-    return f"{manifest['course_code']}_{stamp}_{clock}_{label}-{compute}"
+    when = started.strftime("%Y-%m-%d_%H%M")
+    return f"{manifest['course_code']}_{when}_{label}-{compute}"
 
 
 def _unclaimed(directory: Path, stem: str) -> str:
@@ -714,8 +761,17 @@ def run_packet(
     force: bool = False,
     run_date: str | None = None,
     output_dir: Path | str | None = None,
+    started_at: float | None = None,
 ) -> dict:
-    """Stage entry point. run_date is injectable so golden tests reproduce."""
+    """Stage entry point.
+
+    `run_date` sets the date the packet states about itself, and is injectable
+    so golden tests reproduce. `started_at` is when the run began, and is what
+    the filename is built from: the two are separate because a re-run of an old
+    course legitimately says "this is the 27 August course" in its header while
+    being a run that happened today. Defaults to now, which is right for a bare
+    `--stage packet`.
+    """
     from .config import load_course_yaml
 
     cfg = load_course_yaml(course_dir)
@@ -744,7 +800,10 @@ def run_packet(
         for row in checks["topics"]
     }
 
-    stamp = run_date or date_type.today().isoformat()
+    started = (
+        datetime.fromtimestamp(started_at) if started_at else datetime.now()
+    )
+    stamp = run_date or started.date().isoformat()
     text = build_packet(
         checks, manifest, transcripts, script, per_topic, artifacts_index, stamp
     )
@@ -752,10 +811,7 @@ def run_packet(
     from .library import output_root
 
     destination = output_root(output_dir, create=True)
-    name = _unclaimed(
-        destination,
-        packet_stem(manifest, transcripts, stamp, datetime.now().strftime("%H%M")),
-    )
+    name = _unclaimed(destination, packet_stem(manifest, transcripts, started))
     md_path = destination / f"{name}.md"
     md_path.write_text(text + "\n", encoding="utf-8")
 
@@ -780,6 +836,7 @@ def run_packet(
         "path": str(md_path),
         "json_path": str(destination / f"{name}.json"),
         "output_dir": str(destination),
+        "started_at": started.isoformat(timespec="seconds"),
         "words": words,
         "estimated_pages": round(words / 500.0, 1),
         "lines": len(text.splitlines()),

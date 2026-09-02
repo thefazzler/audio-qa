@@ -8,6 +8,7 @@ the awkward orderings a real run produces.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 import time
 from pathlib import Path
 
@@ -408,6 +409,29 @@ def test_status_serialization_carries_the_derived_counts(store, course):
 # One run per course
 # ---------------------------------------------------------------------------
 
+@dataclass
+class FakeProcess:
+    """What Popen returns, as far as submit is concerned: a pid.
+
+    Tests that stub Popen have to hand back something with one, because submit
+    records the pid so a later reader can ask the operating system whether the
+    run is still there rather than waiting out a timeout.
+    """
+
+    pid: int = 999999
+
+
+def stub_popen(monkeypatch, pid: int = 999999, seen: dict | None = None) -> None:
+    def fake(*args, **kwargs):
+        if seen is not None:
+            seen["started"] = True
+            seen["args"] = args
+            seen["kwargs"] = kwargs
+        return FakeProcess(pid=pid)
+
+    monkeypatch.setattr("qa.jobs.subprocess.Popen", fake)
+
+
 def make_course(tmp_path: Path, name: str = "course11") -> Path:
     course_dir = tmp_path / name
     (course_dir / "qa_work").mkdir(parents=True)
@@ -437,11 +461,10 @@ def test_a_run_on_a_different_course_is_allowed(tmp_path, store, monkeypatch):
     store.write(
         JobStatus(id="live", course_dir=str(first), state=RUNNING, started_at=time.time())
     )
-    started = {}
-    monkeypatch.setattr(
-        "qa.jobs.subprocess.Popen", lambda *a, **k: started.setdefault("yes", True)
-    )
+    started: dict = {}
+    stub_popen(monkeypatch, seen=started)
     assert submit(second, {}, store).course_dir == str(second)
+    assert started["started"]
 
 
 def test_an_abandoned_run_does_not_block_a_new_one(tmp_path, store, monkeypatch):
@@ -460,7 +483,7 @@ def test_an_abandoned_run_does_not_block_a_new_one(tmp_path, store, monkeypatch)
 
     assert store.read("dead").stale is True
     assert store.read("dead").active is False
-    monkeypatch.setattr("qa.jobs.subprocess.Popen", lambda *a, **k: None)
+    stub_popen(monkeypatch)
     assert submit(course_dir, {}, store).id != "dead"
 
 
