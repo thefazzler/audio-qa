@@ -180,15 +180,21 @@ def _topics(status) -> None:
                 "coverage": (
                     f"{topic.coverage * 100:.2f}%" if topic.coverage is not None else ""
                 ),
+                # Strings throughout. A column that mixes integers with
+                # "outline only" has no type Arrow can settle on, and every
+                # page refresh printed a pyarrow traceback saying so. The
+                # column is prose either way; making that explicit is both
+                # quieter and more honest than a column that is a number
+                # except when it is not.
                 "differences": (
                     "outline only"
                     if not topic.scripted and topic.state == "aligned"
-                    else ("" if topic.discrepancies is None else topic.discrepancies)
+                    else ("" if topic.discrepancies is None else str(topic.discrepancies))
                 ),
-                "listen": topic.listen_items or "",
+                "listen": str(topic.listen_items) if topic.listen_items else "",
             }
         )
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
     if status.state == RUNNING:
         st.caption(
             "Results appear per topic as each one finishes, so early topics can "
@@ -313,6 +319,22 @@ def run_label(job) -> str:
     return " · ".join(parts)
 
 
+def pick_index(keys: list[str], labels: dict[str, str], watching: str | None) -> int:
+    """Which run the picker should open on.
+
+    The run this session most recently started, when it is still in the list;
+    otherwise the newest, because the list is newest first and "the one I just
+    did" is what somebody opening this tab is looking for. Never an arbitrary
+    position: a picker that opens on a run from last week, with no indication
+    that it has, is how "Run it now" appeared to do nothing.
+    """
+    if watching:
+        for position, key in enumerate(keys):
+            if labels[key] == watching:
+                return position
+    return 0
+
+
 def watch_panel() -> None:
     store = _store()
     jobs = [resolve(job, store) for job in store.list()]
@@ -329,14 +351,8 @@ def watch_panel() -> None:
             label += " "
         labels[label] = job.id
 
-    default = st.session_state.get("watching")
     keys = list(labels)
-    index = 0
-    if default:
-        for position, key in enumerate(keys):
-            if labels[key] == default:
-                index = position
-                break
+    index = pick_index(keys, labels, st.session_state.get("watching"))
     chosen = st.selectbox(
         "Which run",
         options=keys,

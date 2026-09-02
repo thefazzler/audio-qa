@@ -59,10 +59,56 @@ class Device:
     available: bool
     reason: str = ""
     detail: str = ""
+    # Precisions the runtime says this device supports. Kept off `detail`
+    # because the sidebar answers "what is in this machine" and a list of
+    # quantization names is not an answer to that. It belongs with the rest of
+    # the telemetry, in the stats panel.
+    compute_types: tuple[str, ...] = ()
 
     @property
     def display(self) -> str:
         return self.label if self.available else f"{self.label} (unavailable)"
+
+
+def gpu_hardware() -> str:
+    """The card's own name and memory, asked of the driver.
+
+    CTranslate2 knows how many devices it can use and what precisions they
+    offer; it does not know what they are called. nvidia-smi ships with the
+    driver, so on any machine with a usable CUDA device it is there. When it is
+    not, this returns "" and the caller falls back to counting devices, which
+    is what it could always say.
+    """
+    import subprocess
+
+    try:
+        done = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if done.returncode != 0:
+        return ""
+
+    cards: list[str] = []
+    for line in done.stdout.strip().splitlines():
+        name, _, memory = line.partition(",")
+        name = name.strip()
+        if not name:
+            continue
+        try:
+            gigabytes = f", {round(int(memory.strip()) / 1024)} GB"
+        except (TypeError, ValueError):
+            gigabytes = ""
+        cards.append(f"{name}{gigabytes}")
+    return "; ".join(cards)
 
 
 def probe_cpu() -> Device:
@@ -235,8 +281,8 @@ def probe_gpu() -> Device:
         key=GPU,
         label="GPU",
         available=True,
-        detail=f"{count} CUDA device{'s' if count > 1 else ''}, "
-        f"compute types {', '.join(sorted(names))}",
+        detail=gpu_hardware() or f"{count} CUDA device{'s' if count > 1 else ''}",
+        compute_types=tuple(sorted(names)),
     )
 
 

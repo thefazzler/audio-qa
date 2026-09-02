@@ -778,3 +778,90 @@ def test_the_reuse_note_does_not_promise_what_it_cannot_know(tmp_path):
     assert "unchanged since the last run" in note
     assert "will not be transcribed again" not in note
     assert "model and compute type" in note
+
+
+# ---------------------------------------------------------------------------
+# Re-intake must not forget what was decided last time
+# ---------------------------------------------------------------------------
+
+def test_re_intake_prefills_the_states_that_were_recorded(tmp_path):
+    """Resetting to verbatim would align a demo against its outline.
+
+    Course 10's topic 09 is a screen-capture demo. A second delivery of the
+    same course arriving and quietly re-answering that question would report
+    the whole topic as missing narration.
+    """
+    from qa.intake import read_prefill
+    from qa.script_source import NONE
+
+    _, result = ingest(
+        tmp_path,
+        topics=("01", "09"),
+        topic_scripts={"09": (NONE, "")},
+        reviewed_by="Ryan Mount",
+        notes="Test run 4",
+    )
+    known = read_prefill(result.course_dir)
+
+    assert known.known
+    assert known.project_type == "VENDOR"
+    assert known.reviewed_by == "Ryan Mount"
+    assert known.notes == "Test run 4"
+    assert known.topic_scripts == {"09": (NONE, "")}
+
+
+def test_the_legacy_key_prefills_as_outline(tmp_path):
+    from qa.intake import read_prefill
+    from qa.script_source import OUTLINE
+
+    _, result = ingest(tmp_path, topics=("01", "09"), unscripted=("09",))
+    assert read_prefill(result.course_dir).topic_scripts == {"09": (OUTLINE, "")}
+
+
+def test_a_freeform_topic_prefills_with_its_document(tmp_path):
+    from qa.intake import read_prefill
+    from qa.script_source import FREEFORM
+
+    files = delivery(tmp_path, topics=("01", "09"))
+    demo = tmp_path / "Downloads" / "demo_script.txt"
+    demo.write_text("The kettle boils.", encoding="utf-8")
+    selection = read_selection(files + [demo])
+    result = ingest_selection(
+        selection,
+        IntakeForm(
+            project_type="VENDOR",
+            reviewed_by="Ryan",
+            topic_scripts={"09": (FREEFORM, "demo_script.txt")},
+        ),
+        library=tmp_path / "library",
+    )
+    assert read_prefill(result.course_dir).topic_scripts == {
+        "09": (FREEFORM, "demo_script.txt")
+    }
+
+
+def test_a_course_the_library_has_never_seen_prefills_nothing(tmp_path):
+    from qa.intake import read_prefill
+
+    assert read_prefill(tmp_path / "nowhere").known is False
+
+
+def test_an_unreadable_course_yaml_prefills_nothing_rather_than_failing(tmp_path):
+    """A form that will not open is worse than a form with empty defaults."""
+    from qa.intake import read_prefill
+
+    (tmp_path / "course.yaml").write_text("{[not yaml", encoding="utf-8")
+    assert read_prefill(tmp_path).known is False
+
+
+def test_the_last_reviewer_is_remembered_across_courses(tmp_path, monkeypatch):
+    from qa.intake import last_reviewer
+
+    ingest(tmp_path, topics=("01",), reviewed_by="Ryan Mount")
+    assert last_reviewer(tmp_path / "library") == "Ryan Mount"
+
+
+def test_with_no_courses_the_reviewer_falls_back_to_the_account_name(tmp_path):
+    from qa.intake import last_reviewer
+
+    assert last_reviewer(tmp_path / "empty")  # never blank; getpass at worst

@@ -550,6 +550,104 @@ def _yaml_scalar(value: str) -> str:
 # Optional helpers
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class Prefill:
+    """What a course already in the library says about itself.
+
+    Re-ingesting reset every topic to verbatim, which for Course 10 would have
+    aligned a screen-capture demo against an outline and reported the whole
+    topic as missing narration. The states were decided once, by a person
+    reading the script; a second delivery of the same course is not a reason to
+    ask again, and certainly not a reason to silently answer differently.
+    """
+
+    project_type: str = ""
+    reviewed_by: str = ""
+    notes: str = ""
+    topic_scripts: dict[str, tuple[str, str]] = field(default_factory=dict)
+
+    @property
+    def known(self) -> bool:
+        return bool(self.project_type)
+
+
+def read_prefill(course_dir: Path) -> Prefill:
+    """Read an existing course.yaml, for a form that should not ask twice.
+
+    Never raises. A course.yaml this cannot parse is a reason to fall back to
+    the defaults and let the operator answer, not a reason to refuse the
+    intake.
+    """
+    import yaml
+
+    path = Path(course_dir) / "course.yaml"
+    if not path.exists():
+        return Prefill()
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        return Prefill()
+    if not isinstance(data, dict):
+        return Prefill()
+
+    states: dict[str, tuple[str, str]] = {
+        str(topic).strip(): (OUTLINE, "")
+        for topic in (data.get("unscripted_topics") or [])
+    }
+    raw = data.get("topics")
+    if isinstance(raw, dict):
+        for topic, value in raw.items():
+            if not isinstance(value, dict):
+                continue
+            state = str(value.get("script") or VERBATIM).strip()
+            if state in TOPIC_STATES and state != VERBATIM:
+                states[str(topic).strip()] = (state, str(value.get("file") or "").strip())
+
+    return Prefill(
+        project_type=str(data.get("project_type") or "").strip().upper(),
+        reviewed_by=str(data.get("reviewed_by") or "").strip(),
+        notes=str(data.get("notes") or "").strip(),
+        topic_scripts=states,
+    )
+
+
+def last_reviewer(library: Path | None = None) -> str:
+    """Who ran the most recent intake, or this machine's user.
+
+    "Reviewed by" is required, and typing the same name every time is the kind
+    of friction that ends with somebody typing a single letter. The last answer
+    is the best guess available; the account name is a reasonable second.
+    """
+    from .library import library_root, list_courses
+
+    try:
+        courses = list_courses(library_root(library))
+    except QAError:
+        courses = []
+
+    best, when = "", 0.0
+    for course in courses:
+        path = course.path / "course.yaml"
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            continue
+        if stamp <= when:
+            continue
+        name = read_prefill(course.path).reviewed_by
+        if name:
+            best, when = name, stamp
+    if best:
+        return best
+
+    import getpass
+
+    try:
+        return getpass.getuser()
+    except Exception:
+        return ""
+
+
 def remove_originals(result: IntakeResult) -> list[Path]:
     """Delete the source files, only when a human asks for it.
 

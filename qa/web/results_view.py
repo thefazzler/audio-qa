@@ -27,8 +27,15 @@ from qa.results import (
     ResultsError,
     load_results,
 )
-from qa.device import DEVICE_NOTE
+from qa.device import DEVICE_NOTE, probe
 from qa.util import QAError
+
+
+@st.cache_data(show_spinner=False)
+def _probe():
+    """Probed once per session; hardware does not change while the app runs."""
+    return probe()
+
 
 STATE_ICON = {
     NO_DIFFERENCES: "ok",
@@ -96,15 +103,18 @@ def _checks_table(results) -> None:
                 "script": t.script,
                 "state": STATE_ICON.get(t.state, t.state),
                 "coverage": _percent(t.coverage) if t.scripted else "n/a",
-                "differences": t.differences if t.scripted else "not aligned",
-                "listen": t.listen_items or "",
+                # Strings throughout, for the reason given in run_view: a
+                # column that is a number except when it says "not aligned"
+                # cannot be typed, and Arrow said so on every refresh.
+                "differences": str(t.differences) if t.scripted else "not aligned",
+                "listen": str(t.listen_items) if t.listen_items else "",
                 "flags": ", ".join(t.flags),
                 "audio": ", ".join(t.audio_findings),
-                "suppressed": t.suppressed or "",
+                "suppressed": str(t.suppressed) if t.suppressed else "",
             }
             for t in results.topics
         ],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
     st.caption(
@@ -149,7 +159,7 @@ def _listen_list(results) -> None:
             }
             for item in results.listen
         ],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -290,6 +300,15 @@ def _stats(results) -> None:
         else:
             columns[2].write("memory not measurable on this platform")
 
+        # The precisions this machine's card offers, which is telemetry rather
+        # than an answer to "what is in this machine". The sidebar names the
+        # card; this is where the quantization list belongs.
+        offered = [d for d in _probe() if d.compute_types]
+        for device in offered:
+            columns[2].caption(
+                f"{device.label} compute types: {', '.join(device.compute_types)}"
+            )
+
         if stats.fallback_reason:
             st.warning(
                 f"This run asked for {stats.device_requested or 'a GPU'} and "
@@ -310,7 +329,7 @@ def _stats(results) -> None:
                 }
                 for row in stats.per_topic
             ],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 

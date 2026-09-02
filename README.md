@@ -44,16 +44,25 @@ cannot honestly certify that it did not.
 
 ## Install
 
-Clone, then run the setup command. It tells you what is missing and how to fix
-it, installs what is safe to install, and proves the result works:
+**On Windows, double-click `qa-setup.cmd`, then double-click `qa-web.cmd`.**
+That is the whole of it. The first checks what this machine needs, installs
+what is safe to install, prints the exact command for anything system wide it
+will not install for you, and finishes by running the whole pipeline on a
+generated fixture to prove the result works. The second opens the interface.
+
+Nobody reviewing narration should have to learn what a virtual environment is,
+and "activate the venv, then type qa-web" is where those instructions used to
+lose people.
+
+From a terminal, or on macOS and Linux, it is the same command underneath:
 
     git clone https://github.com/thefazzler/audio-qa.git
     cd audio-qa
     python -m qa.setup
 
 Anything it reports as MISSING or VERSION MISMATCH in Python, git, ffmpeg or
-ffprobe is system software: run the command it prints, then run `qa-setup`
-again. It will not install those for you.
+ffprobe is system software: run the command it prints, then run setup again.
+It will not install those for you.
 
 Once the virtual environment exists, `qa-setup` is on the path:
 

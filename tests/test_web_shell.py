@@ -179,3 +179,82 @@ def test_a_file_path_shows_the_folder_holding_it(tmp_path, monkeypatch):
 
     assert reveal.open_folder(packet) == ""
     assert shown == [str(tmp_path)]
+
+
+# ---------------------------------------------------------------------------
+# Which run the picker opens on
+# ---------------------------------------------------------------------------
+
+def test_the_picker_opens_on_the_run_this_session_started():
+    from qa.web.run_view import pick_index
+
+    keys = ["newest", "middle", "oldest"]
+    labels = {"newest": "aaa", "middle": "bbb", "oldest": "ccc"}
+    assert pick_index(keys, labels, "bbb") == 1
+
+
+def test_the_picker_falls_back_to_the_newest_run():
+    """The list is newest first, and that is what somebody is looking for."""
+    from qa.web.run_view import pick_index
+
+    keys = ["newest", "older"]
+    labels = {"newest": "aaa", "older": "bbb"}
+    assert pick_index(keys, labels, None) == 0
+    assert pick_index(keys, labels, "gone") == 0, "a stale id must not misdirect"
+
+
+def test_a_starting_run_says_starting_rather_than_device_unknown():
+    """"device unknown · 0s" describes the label's ignorance, not the run."""
+    label = run_label(
+        JobStatus(
+            id="new",
+            course_dir="lib/course10",
+            course_code="it_spisccc26_10_enus",
+            state="pending",
+            started_at=time.time(),
+        )
+    )
+    assert label.endswith("starting")
+    assert "unknown" not in label
+    assert "0s" not in label
+
+
+# ---------------------------------------------------------------------------
+# The double-click launchers
+# ---------------------------------------------------------------------------
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.mark.parametrize("name", ["qa-setup.cmd", "qa-web.cmd"])
+def test_the_launcher_exists_and_runs_from_its_own_folder(name):
+    """A colleague double-clicks it from wherever the repo happens to be."""
+    text = (ROOT / name).read_text(encoding="utf-8")
+    assert 'cd /d "%~dp0"' in text, "must not depend on the working directory"
+    assert "@echo off" in text
+
+
+def test_the_web_launcher_uses_the_projects_own_python():
+    text = (ROOT / "qa-web.cmd").read_text(encoding="utf-8")
+    assert r".venv\Scripts\python.exe" in text
+    assert "qa.web.launch" in text
+
+
+def test_the_web_launcher_sends_people_to_setup_when_there_is_no_environment():
+    """"python is not recognized" is not an instruction anybody can act on."""
+    text = (ROOT / "qa-web.cmd").read_text(encoding="utf-8")
+    assert "qa-setup.cmd" in text
+    assert "No environment here yet" in text
+
+
+def test_the_setup_launcher_survives_having_no_environment_yet():
+    """Its whole job is to create the environment, so it cannot require one."""
+    text = (ROOT / "qa-setup.cmd").read_text(encoding="utf-8")
+    assert "if not exist" in text
+    assert "qa.setup" in text
+
+
+@pytest.mark.parametrize("name", ["qa-setup.cmd", "qa-web.cmd"])
+def test_a_launcher_does_not_close_on_an_error_before_it_is_read(name):
+    text = (ROOT / name).read_text(encoding="utf-8")
+    assert "pause" in text, "a window that vanishes takes its error message with it"

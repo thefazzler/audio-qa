@@ -284,7 +284,21 @@ def _script_source_panel(selection, project_type: str) -> bool:
     return True
 
 
-def _script_controls(selection, project_type: str) -> dict[str, tuple[str, str]]:
+def _prefill(selection):
+    """What the library already knows about this course, if it knows it."""
+    from qa.intake import read_prefill
+    from qa.library import course_path, library_root
+
+    return read_prefill(
+        course_path(
+            library_root(), selection.learning_path, selection.course_number
+        )
+    )
+
+
+def _script_controls(
+    selection, project_type: str, known=None
+) -> dict[str, tuple[str, str]]:
     """Per-topic script state, for the topics that are not verbatim.
 
     Hidden for CGT: a BUS script is verbatim for every topic including the
@@ -300,18 +314,30 @@ def _script_controls(selection, project_type: str) -> dict[str, tuple[str, str]]
         return {}
 
     candidates = [p.name for p in selection.freeform_candidates(project_type)]
-    st.caption(
-        "Every topic is verbatim unless you say otherwise. Container format is "
-        "not a hint: topics normally arrive as mp4 on both project types, and a "
-        "demo may be scripted, outlined, or not scripted at all."
-    )
+    remembered = dict(getattr(known, "topic_scripts", {}) or {})
+    if remembered:
+        st.caption(
+            "Prefilled from this course's existing course.yaml. Re-ingesting "
+            "used to reset every topic to verbatim, which would have aligned a "
+            "demo against its outline and reported the whole topic as missing."
+        )
+    else:
+        st.caption(
+            "Every topic is verbatim unless you say otherwise. Container format "
+            "is not a hint: topics normally arrive as mp4 on both project types, "
+            "and a demo may be scripted, outlined, or not scripted at all."
+        )
+
+    options = [VERBATIM, OUTLINE, NONE, FREEFORM]
     chosen: dict[str, tuple[str, str]] = {}
     for topic in selection.topics:
+        was, was_file = remembered.get(topic, (VERBATIM, ""))
         columns = st.columns([1, 2, 3])
         columns[0].write(f"`{topic}`")
         state = columns[1].selectbox(
             "script",
-            options=[VERBATIM, OUTLINE, NONE, FREEFORM],
+            options=options,
+            index=options.index(was) if was in options else 0,
             key=f"script-{topic}",
             label_visibility="collapsed",
         )
@@ -321,6 +347,7 @@ def _script_controls(selection, project_type: str) -> dict[str, tuple[str, str]]
                 document = columns[2].selectbox(
                     "document",
                     options=candidates,
+                    index=candidates.index(was_file) if was_file in candidates else 0,
                     key=f"script-file-{topic}",
                     label_visibility="collapsed",
                 )
@@ -337,15 +364,25 @@ def _script_controls(selection, project_type: str) -> dict[str, tuple[str, str]]
 def _form(selection) -> IntakeForm | None:
     st.subheader("3. The questions the filenames cannot answer")
 
+    known = _prefill(selection)
+    if known.known:
+        st.info(
+            "This course is already in the library. Its project type, reviewer "
+            "and per-topic script states are prefilled from what was recorded "
+            "last time; change anything that has actually changed."
+        )
+
+    types = ["VENDOR", "CGT"]
     project_type = st.selectbox(
         "Project type",
-        options=["VENDOR", "CGT"],
+        options=types,
+        index=types.index(known.project_type) if known.project_type in types else 0,
         help="VENDOR routes findings to an edit sheet; CGT to a remediation plan.",
     )
     ready = _script_source_panel(selection, project_type)
 
     st.write("**Script per topic**")
-    topic_scripts = _script_controls(selection, project_type)
+    topic_scripts = _script_controls(selection, project_type, known)
 
     with st.form("intake"):
         devices = _devices()
@@ -362,11 +399,18 @@ def _form(selection) -> IntakeForm | None:
             st.caption(f"{missing.label} unavailable: {missing.reason}")
         st.caption(DEVICE_NOTE)
 
+        # Required, and typing the same name every time is the kind of
+        # friction that ends with somebody typing a single letter. The last
+        # answer is the best guess available; the account name is a reasonable
+        # second.
+        from qa.intake import last_reviewer
+
         reviewed_by = st.text_input(
             "Reviewed by",
+            value=known.reviewed_by or last_reviewer(),
             help="Recorded with the run and carried into the packet.",
         )
-        notes = st.text_area("Notes", height=80, placeholder="Optional")
+        notes = st.text_area("Notes", value=known.notes, height=80, placeholder="Optional")
 
         submitted = st.form_submit_button("Submit", type="primary", disabled=not ready)
 
