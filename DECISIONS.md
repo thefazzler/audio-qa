@@ -1139,3 +1139,123 @@ course, which is what makes a claim like D23's checkable by anyone rather than
 only by whoever happened to run both that afternoon. The old naming was course
 plus date, so a second run on the same day overwrote the first silently, which
 is precisely the case where comparing them matters most.
+
+### One clock, and the three files named by two
+
+The first version of this took the date from `--date` and the time of day from
+the moment the packet was written. Those are two different clocks, and a re-run
+of an older course showed it: three packets in the output folder are named for
+a day they were not produced on.
+
+    it_spisccc26_10_enus_2026-08-27_1600_gpu-float16.md    written 09-01 16:00
+    it_spisccc26_10_enus_2026-08-27_1624_cpu-int8.md       written 09-01 16:24
+    it_spisccc26_11_enus_2026-08-30_1656_cpu-int8.md       written 09-01 16:56
+
+Time of day is the run's; the date is the one `--date` supplied. Both halves
+now come from the run's start timestamp, threaded from the CLI and from the job
+record, and `--date` sets only what the packet states about itself in its
+header. Those two are genuinely different questions: a re-run of the August
+course legitimately says "this is the 27 August course" while being a run that
+happened in September.
+
+**The three files above are left as they are.** Renaming them would make the
+folder tidier and the record worse: they are what the tool actually produced,
+and the whole argument for never overwriting a packet is that the folder is
+evidence rather than a presentation. Anyone reading them should know the date
+in those three names is the course's, not the run's; every packet written after
+2026-09-01 18:40 uses one clock.
+
+Also fixed here: the packet is named for when the run *began*, not for when its
+last stage finished. On a course that takes twenty minutes those differ by
+twenty minutes, and the run start is what a person means by "the 14:41 run".
+
+## D29. A job record is a claim, and claims get checked
+
+The web interface reported that a run had not started while that run went all
+the way through and wrote its packet. The engine was right; the instrument
+reporting on the engine was lying. That is the failure this whole codebase is
+organized against, and it had got into the layer that watches the codebase.
+
+Two separate faults, found together.
+
+### The progress view only looked once
+
+The auto-refreshing fragment was armed when the record said `RUNNING`. A job
+submitted a moment ago says `PENDING`, because the subprocess that will flip it
+has not started yet. So the page rendered once, statically, said "Queued /
+Reading the delivered files...", and never looked again. Streamlit reruns on
+interaction, so a person watching it saw that sentence until they clicked
+something, which is exactly what somebody waiting for a run does not do.
+
+`PENDING` is the state where the refresh matters most, and it was the one state
+without it. The condition is now "could this still change" rather than "is it
+running", and it lives in a predicate, `should_refresh`, so a test can hold it
+without a browser.
+
+### A record is what a process last said about itself
+
+A process that dies stops updating its claim. Read literally, a killed run says
+`RUNNING` for ever: the progress view waits, the picker says "running", and the
+one-run-per-course guard refuses new runs on a course whose run died an hour
+ago, leaving it unrunnable until somebody deletes a file they have never heard
+of.
+
+The old defence was a timeout: a record untouched for two minutes is stale. But
+"has it been quiet for a while" is not the question, and it is wrong in both
+directions — a wedged run looks alive for two minutes, and a machine that
+sleeps mid-run looks dead.
+
+So `submit` records the pid, and `resolve` checks the record against the
+operating system:
+
+    the process is alive       nothing to correct; it is still running
+    gone, but a packet exists  it finished and lost its last write
+    gone, with no packet       it died; say so, with what it printed
+
+The middle case is the one worth naming. **The evidence that a run finished
+does not have to come from the run.** It reached the last stage and wrote a
+file; that is a fact about the world, and it outranks a status record that
+never got its final write.
+
+Corrections are written back, so the picker, the progress view and the guard
+cannot disagree about one run. The guard now tests the process rather than the
+record.
+
+Two details that cost something to get right:
+
+**The Windows liveness probe never touches `os.kill`.** There, `os.kill` with
+any signal other than the two console events calls `TerminateProcess`, so the
+obvious implementation would kill the run it was asking about. It uses
+`OpenProcess` plus a zero-timeout `WaitForSingleObject` instead, and there is a
+test that asserts the probe leaves its subject running.
+
+**The probe is deliberately biased towards "alive".** A recycled pid makes a
+dead job look alive, which costs a wait. The opposite error declares a running
+course dead and invites a second run on the same folder, which is the one thing
+the guard exists to prevent.
+
+### The run's output goes to a file now
+
+A detached run wrote to `DEVNULL`, so a process that died before it could
+record why left nothing at all behind. "It failed" with no reason is barely
+better than the failure. Everything the run prints now goes to
+`<jobs>/<id>.log`, and a job that ends without saying how gets that tail
+attached to its error.
+
+### What a run that decoded nothing may claim
+
+The same fault in a quieter form: a run that reused every transcript reported
+"4.7 min to decode 53.1 min of audio (11.20x realtime)" for a stage that took
+1.7 seconds. Those numbers were real and belonged to an earlier run. Presented
+as this run's own measurement they are false, and they are exactly the sort of
+figure somebody quotes six months later.
+
+Transcripts now record when, where and on what machine they were decoded, and
+a reused row carries that forward. A run that decodes nothing says so and names
+the run whose work it is using; a partial re-decode says how much of the course
+its timing covers.
+
+The general rule, which is worth more than any of the fixes: **a summary
+describes the thing it is attached to.** A stage summary describes that stage's
+run of that stage. A packet header describes the run that produced the packet.
+Where the honest answer is "this did not happen here", that is the answer.

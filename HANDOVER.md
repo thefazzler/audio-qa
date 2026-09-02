@@ -4,11 +4,17 @@ For whoever picks this up next. Written so that if the person who built it is
 unavailable, you can run a course end to end, understand why it is built the
 way it is, and know what is unfinished.
 
-**Step one on a new machine: run `qa-setup`.** It checks every prerequisite,
-tells you the exact command for anything missing, installs the things that are
-safe to install, and finishes by running the whole pipeline on a generated
-fixture to prove it works. `qa-setup --check` is also the troubleshooting tool
-later, when something breaks after a Python or driver upgrade. See D22.
+**Step one on a new machine: double-click `qa-setup.cmd`, then `qa-web.cmd`.**
+On anything other than Windows, or from a terminal, that is `python -m qa.setup`
+then `qa-web`. Setup checks every prerequisite, tells you the exact command for
+anything missing, installs the things that are safe to install, and finishes by
+running the whole pipeline on a generated fixture to prove it works.
+`qa-setup --check` is also the troubleshooting tool later, when something breaks
+after a Python or driver upgrade. See D22.
+
+The two `.cmd` files exist because "activate the virtual environment, then type
+qa-web" is where the instructions lost people, and nobody reviewing narration
+should have to learn what a virtual environment is.
 
 Read this first, then `README.md` for how to install and run, then
 `DECISIONS.md` when you want to know why something is the way it is. Do not
@@ -157,8 +163,17 @@ know, it stops and tells you which phrase fired on which slide. Add to
 
 **Only one run per course at a time.** Two runs on one course folder overwrite
 each other's intermediates and each keeps invalidating the other. The web layer
-refuses this; the CLI does not stop you. Packets are the exception and are
-never overwritten by anything, which is the point of D28.
+refuses this; the CLI does not stop you. The refusal tests the run's process
+rather than its record, so a run whose process died does not leave the course
+unrunnable; see **D29**. Packets are the exception and are never overwritten by
+anything, which is the point of D28.
+
+**A status record is a claim, not a fact.** `qa/jobs.py` writes what a run says
+about itself, and a run that dies stops saying anything. Every reader goes
+through `resolve()`, which checks the record against the operating system and
+against whether a packet exists, and heals it. If you add a reader, use
+`resolve()`; reading the record directly is how the progress view came to
+report that a finished run had not started. See **D29**.
 
 **A no-op edit is not an error.** Several bulk edits during the build silently
 did nothing because a string replace whose pattern does not match changes
