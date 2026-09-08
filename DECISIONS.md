@@ -1323,3 +1323,147 @@ written down, in D15, and because HANDOVER.md sends every successor to it.
 There is no separate pronunciation-levels document in this repository; if one
 is ever split out of D15, it is one line in `DOCS` and the test will hold the
 link.
+
+## D31. Reclaiming disk space, and a second budget for the help layer
+
+Two things arrived together and are recorded together because the second one
+exists to explain the first.
+
+### What a course actually costs, and what of that is the answer
+
+Measured on the working library, three courses, 561 MB:
+
+    audio/ and the script document   472 MB   delivered, downloadable again
+    qa_work/audio/*.wav               85 MB   demuxed, rebuilt in seconds
+    qa_work/*.json, qa_out/            3 MB   what the runs found
+
+So the split is not big files against small files. It is **what a machine can
+make again** against **what a run discovered**. New module `qa/cleanup.py`
+removes only the first kind, in two tiers, and never the second.
+
+**Scratch** is the demuxed wav alone. Derived from the delivered media, rebuilt
+by the ingest stage in seconds, and the course stays runnable without it. There
+is no trade to weigh, so the UI does not pretend there is one.
+
+**Media** is the narration and the script document. Removing it frees better
+than 99 percent of a course and costs the ability to run that course until the
+delivery is downloaded again. The course keeps `course.yaml`, so it stays in
+the library and on the Results tab, and it writes `qa_work/reclaimed.json`, so
+the run picker and the results page can say why it cannot be run rather than
+failing at the ingest stage on a missing file nobody remembers deleting.
+
+**Every qa_work JSON is kept, per-topic files included.** This is the decision
+in the whole feature that is worth writing down. The first design deleted
+`transcript_NN.json` and `discrepancies_NN.json` as working files, on the
+reasoning that a rerun regenerates them. It does — but the **listen list is
+rebuilt from `discrepancies_<topic>.json` every time the Results tab opens**.
+Delete those and the page does not fail. It renders, and says "Nothing on the
+listen list", which reads as a course with nothing to listen to. That is a
+silent false clearance in the one place this tool exists to be loud about, and
+it would have cost 0.8 MB across the whole library to avoid. Keeping them costs
+nothing worth measuring and the test that holds it reclaims a course and reads
+its listen list back.
+
+The general rule, which outlives this module: **a deletion that cannot fail
+loudly must not be able to fail at all.** An emptied listen list is the same
+class of fault as the transcriber that skipped a file without saying so.
+
+### What it refuses
+
+Packets are never touched by a course reclaim; they live outside the library
+for the reasons in D28 and have their own archive. A run in progress stops the
+whole thing, through the same `running_for` guard `submit` uses — extracted
+into one function precisely so the two cannot answer differently, and asked of
+the operating system rather than of the record, per D29. Every path is checked
+to be inside the folder it claims to be in before it is unlinked, so a bug in
+the survey is a refusal rather than an incident. `course.yaml`, anything under
+`qa_out/` and every JSON under `qa_work/` are protected a second time at the
+point of deletion, though no bucket collects them in the first place.
+
+Packets get delete, archive, or both. The archive is one zip in the packet
+folder itself rather than somewhere chosen: the folder is the run history, and
+a history half here and half on a drive somebody remembers is not one. 3.2 MB
+of markdown compressed to 657 KB in the first real run of it. **Originals are
+removed only after the archive has been read back from disk and seen to hold
+them** — read from the file, not from the list just written to it, because the
+failure worth designing against is an archive that was not written and
+originals that were.
+
+### The second budget
+
+D30 capped the help layer at 500 words and said to cut rather than raise it.
+That rule was then asked to carry a mark on every major element, including a
+glossary of all eight pipeline stages, which is 100 words on its own.
+
+The budget splits rather than grows. `BUDGET_FIELDS` still caps what somebody
+reads **while working** — form fields, results columns, and the tour — and is
+still 500, and the existing 497 words are unchanged. `BUDGET_CONCEPTS` caps
+what somebody reads **while learning**: what a stage does, what a metric means,
+what a panel is for. Two tests, two numbers, and the rule inside each is
+untouched: a draft over budget gets cut, never the budget raised. The layer
+grew a second surface; the discipline did not slip.
+
+One concept is allowed to be a glossary rather than a sentence. The stage row
+is a single Streamlit caption, so exactly one help mark can hang on it and the
+alternative to one list of eight is nothing at all.
+
+Two tests came out of building it, both from the same mistake. Trimming the
+module to fit the budget removed two concept keys and left the calls behind,
+and the first anyone knew was a `KeyError` traceback where the Storage tab
+should have been. So: every key a page asks for must exist, and every key the
+module defines must be asked for by some page. Pruning words is meant to be
+safe, and what makes it safe is a test rather than care.
+
+## D32. Watching a run must not be able to kill it
+
+Found while trying to commit D31, from the end to end liveness test failing
+about one run in eight. The failure was not in the test. The run had marked
+itself FAILED, and the error it recorded was a `PermissionError` raised by its
+own status write:
+
+    [WinError 5] Access is denied: jobs\4fec5b57b5c6.tmp -> jobs\...json
+
+Windows refuses to replace a file while any process has the destination open.
+`FileJobStore.write` writes a temporary and replaces the record, the progress
+view reads that record every two seconds, and the run writes it every second.
+When the two met, `Path.replace` raised, the exception reached `run_job`'s
+blanket handler, and a perfectly healthy course run was recorded as failed.
+
+**A page watching a run could kill the run.** Two independent things had to be
+true for that, and both are now false.
+
+**The writer had no retry, though the reader always had one.**
+`FileJobStore.read` already retried a lost race, with a comment explaining that
+reading again is cheaper than locking. The mirror image of that race was never
+handled. `_replace` now retries with a backoff, ten attempts over 2.25 seconds
+against a write that normally takes microseconds. That covers the real reader,
+which opens the record, reads it and closes it.
+
+**Progress reporting could raise into the run.** `ProgressWatcher._loop`
+already refused to take the run down with it — "progress is a convenience; the
+pipeline's own outputs are the truth" — but `set_stage` is called from the
+run's own thread, not the watcher's, and its write was unguarded. It is guarded
+now. The next scan, a second later, writes the same record again.
+
+The second fix is the one that actually holds, and the test says so. No retry
+survives a reader that never lets go, so the run's survival cannot rest on the
+write succeeding; it rests on a lost status write being survivable. **D29
+already established that**: every reader goes through `resolve()`, which checks
+the record against the operating system and against whether a packet exists,
+precisely so that a run which finished and lost its last write is still read as
+finished. A dropped write was already an anticipated condition. A dropped write
+that kills the run was not.
+
+The general rule, and the reason this is an entry rather than a comment: **an
+instrument may lose its reading, but it may never damage what it is measuring.**
+The whole progress layer was built on the pipeline's own outputs so that
+watching a run would not perturb it, and then the watching perturbed it through
+the back door of the file it wrote about itself.
+
+Twenty consecutive runs of the liveness suite after the fix, against roughly
+one failure in eight before it.
+
+Worth noting for whoever meets this next: the bug is invisible on a machine
+nobody is watching, and it gets more likely the more attentively you watch. It
+would have shown up as occasional unexplained failures on somebody's desktop
+during the colleague pilot, with a packet on disk and a run that says it failed.

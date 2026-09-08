@@ -29,7 +29,7 @@ from qa.results import (
 )
 from qa.device import DEVICE_NOTE, probe
 from qa.util import QAError
-from qa.web.helptext import tooltip
+from qa.web.helptext import concept, tooltip
 
 
 @st.cache_data(show_spinner=False)
@@ -78,7 +78,9 @@ def _headline(results) -> None:
         f"Course {results.course_number} ({results.course_code}), "
         f"{results.project_type}. "
         f"{results.clean_topics} of {results.topic_count} topics show no word "
-        "level differences."
+        "level differences.",
+        # One mark for the four numbers above, on the line that describes them.
+        help=concept("headline"),
     )
     if results.flagged_topics:
         st.warning(
@@ -90,7 +92,7 @@ def _headline(results) -> None:
 
 
 def _checks_table(results) -> None:
-    st.subheader("Checks")
+    st.subheader("Checks", help=concept("checks_table"))
     st.caption(
         "Coverage is the share of script tokens matched. A topic with no "
         "differences is not a certified topic: pronunciation and delivery are "
@@ -189,7 +191,7 @@ def _listen_list(results) -> None:
 
 
 def _packet_and_judgment(results) -> None:
-    st.subheader("Next: judgment")
+    st.subheader("Next: judgment", help=concept("packet"))
     if results.packet_md is None:
         st.warning("No packet has been built for this course yet.")
         return
@@ -391,6 +393,17 @@ def results_panel() -> None:
     except QAError as exc:
         st.error(str(exc))
         return
+
+    from qa.cleanup import reclaimed_at
+
+    freed = reclaimed_at(course.path)
+    if freed:
+        st.info(
+            f"This course's delivered files were removed on {freed} to free "
+            "disk space. Everything below is what the run found and is "
+            "unaffected; the course has to be ingested again before it can be "
+            "re-run."
+        )
 
     _headline(results)
     _listen_list(results)

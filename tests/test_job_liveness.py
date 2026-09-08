@@ -33,6 +33,7 @@ from qa.jobs import (
     FileJobStore,
     JobError,
     JobStatus,
+    ProgressWatcher,
     process_alive,
     resolve,
     submit,
@@ -365,3 +366,120 @@ def test_a_run_started_the_way_the_ui_starts_one_reaches_finished(store, tmp_pat
     packets = list((tmp_path / "packets").glob("*.md"))
     assert len(packets) == 1, "the run wrote no packet"
     assert packets[0].name.startswith("it_gen02_01_enus_")
+
+
+# ---------------------------------------------------------------------------
+# A page watching a run must not be able to kill it
+# ---------------------------------------------------------------------------
+# Found by the end to end liveness test failing about one run in eight, with
+# the run having marked itself FAILED carrying a PermissionError raised by its
+# own status write. On Windows a file cannot be replaced while any process has
+# the destination open, and the progress view reads that record every two
+# seconds while the run writes it every second.
+
+def test_a_reader_holding_the_record_does_not_break_the_write(tmp_path):
+    """The real race: a reader that opens the record, reads it and closes it.
+
+    That is what the progress view does every two seconds. The retry has to
+    outlast the handle, not the reader.
+    """
+    import threading
+
+    store = FileJobStore(tmp_path)
+    status = JobStatus(id="race01", course_dir=str(tmp_path / "course"))
+    store.write(status)
+
+    holding = threading.Event()
+
+    def reader():
+        with open(store.path("race01"), "r", encoding="utf-8") as handle:
+            handle.read()
+            holding.set()
+            time.sleep(0.15)
+
+    thread = threading.Thread(target=reader)
+    thread.start()
+    holding.wait(2)
+    status.stage = "transcribe"
+    store.write(status)
+    thread.join()
+
+    assert store.read("race01").stage == "transcribe"
+
+
+def test_a_reader_that_never_lets_go_still_cannot_kill_the_run(tmp_path):
+    """The guarantee the retry alone cannot give.
+
+    No amount of retrying beats a handle held open for ever, so the run's
+    survival cannot rest on the write succeeding. It rests on a failed status
+    write being survivable: the record is a claim about the run, and D29
+    already designed every reader to heal a claim whose last write was lost.
+    """
+    course = tmp_path / "course"
+    course.mkdir()
+    store = FileJobStore(tmp_path / "jobs")
+    status = JobStatus(id="race02", course_dir=str(course))
+    store.write(status)
+
+    watcher = ProgressWatcher(course, status, store)
+    with open(store.path("race02"), "r", encoding="utf-8") as handle:
+        handle.read()
+        # Would have raised PermissionError, been caught by run_job's blanket
+        # handler, and marked a healthy run FAILED.
+        watcher.set_stage("transcribe", 4, 8)
+
+    assert status.stage == "transcribe", "the record still updated in memory"
+
+
+def test_the_replace_retries_rather_than_giving_up_at_once(tmp_path, monkeypatch):
+    """A retry that ran once would pass the test above on a lucky machine."""
+    import qa.jobs as jobs_module
+
+    target = tmp_path / "record.json"
+    target.write_text("{}", encoding="utf-8")
+    temporary = tmp_path / "record.tmp"
+    temporary.write_text("{}", encoding="utf-8")
+
+    attempts = []
+    real = Path.replace
+
+    def flaky(self, other):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise PermissionError(5, "Access is denied")
+        return real(self, other)
+
+    monkeypatch.setattr(Path, "replace", flaky)
+    monkeypatch.setattr(jobs_module, "REPLACE_BACKOFF_S", 0.0)
+    jobs_module._replace(temporary, target)
+
+    assert len(attempts) == 3, "it must keep trying, not give up on the first refusal"
+
+
+def test_a_replace_that_never_succeeds_still_gives_up(tmp_path, monkeypatch):
+    """Retrying forever would hang a run instead of failing it."""
+    import qa.jobs as jobs_module
+
+    def always_denied(self, other):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(Path, "replace", always_denied)
+    monkeypatch.setattr(jobs_module, "REPLACE_BACKOFF_S", 0.0)
+    with pytest.raises(PermissionError):
+        jobs_module._replace(tmp_path / "a.tmp", tmp_path / "b.json")
+
+
+def test_a_failed_status_write_does_not_fail_the_run(tmp_path):
+    """set_stage runs on the run's own thread, so it must swallow what scan does."""
+    course = tmp_path / "course"
+    course.mkdir()
+    status = JobStatus(id="race03", course_dir=str(course))
+
+    class Refusing:
+        def write(self, status):
+            raise PermissionError(5, "Access is denied")
+
+    watcher = ProgressWatcher(course, status, Refusing())
+    watcher.set_stage("transcribe", 4, 8)
+
+    assert status.stage == "transcribe", "the record still updated in memory"

@@ -19,7 +19,18 @@ from pathlib import Path
 import pytest
 
 from qa.web import docs_view, helptext, tour
-from qa.web.helptext import BUDGET, DOCS, TOOLTIPS, TOUR, tooltip, word_count
+from qa.web.helptext import (
+    BUDGET_CONCEPTS,
+    BUDGET_FIELDS,
+    CONCEPTS,
+    DOCS,
+    TOOLTIPS,
+    TOUR,
+    concept,
+    concept_words,
+    field_words,
+    tooltip,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -28,23 +39,40 @@ ROOT = Path(__file__).resolve().parent.parent
 # The budget
 # ---------------------------------------------------------------------------
 
-def test_the_whole_layer_fits_on_one_page():
+def test_what_you_read_while_working_fits_on_one_page():
     """The rule is cut until it fits, never raise the number. See D30."""
-    total = word_count()
-    assert total <= BUDGET, (
-        f"the help layer is {total} words, over the {BUDGET} word budget by "
-        f"{total - BUDGET}. Cut something in qa/web/helptext.py; do not raise "
-        "BUDGET."
+    total = field_words()
+    assert total <= BUDGET_FIELDS, (
+        f"field tooltips and the tour come to {total} words, over the "
+        f"{BUDGET_FIELDS} word budget by {total - BUDGET_FIELDS}. Cut "
+        "something in qa/web/helptext.py; do not raise the budget."
     )
 
 
-def test_the_budget_is_one_page():
-    assert BUDGET == 500
+def test_what_you_read_while_learning_fits_on_one_page():
+    """The second budget, added when the layer grew a second surface. See D31."""
+    total = concept_words()
+    assert total <= BUDGET_CONCEPTS, (
+        f"the concept texts come to {total} words, over the "
+        f"{BUDGET_CONCEPTS} word budget by {total - BUDGET_CONCEPTS}. Cut "
+        "something in qa/web/helptext.py; do not raise the budget."
+    )
 
 
-def test_the_budget_is_actually_measuring_something():
-    """A counter that returns zero would pass the budget test forever."""
-    assert word_count() > 300
+def test_both_budgets_are_one_page():
+    assert BUDGET_FIELDS == 500
+    assert BUDGET_CONCEPTS == 500
+
+
+def test_the_budgets_are_actually_measuring_something():
+    """A counter that returns zero would pass a budget test forever."""
+    assert field_words() > 300
+    assert concept_words() > 300
+
+
+def test_the_two_budgets_count_different_words():
+    """Nothing may be counted twice, or in neither, to duck a cap."""
+    assert set(TOOLTIPS) & set(CONCEPTS) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +130,66 @@ def test_the_reviewer_tooltip_says_where_the_name_ends_up():
     text = tooltip("reviewed_by")
     assert "course.yaml" in text
     assert "packet" in text
+
+
+# ---------------------------------------------------------------------------
+# Concepts
+# ---------------------------------------------------------------------------
+
+# The elements a person watching a run or reading results asked to have
+# explained: what the pipeline is doing, and what a number means.
+REQUIRED_CONCEPTS = (
+    "stages",
+    "elapsed",
+    "time_remaining",
+    "headline",
+    "checks_table",
+    "packet",
+    "storage",
+    "scratch",
+    "media",
+    "findings_kept",
+    "archive",
+    "delete_packets",
+)
+
+
+@pytest.mark.parametrize("key", REQUIRED_CONCEPTS)
+def test_every_element_that_was_promised_an_explanation_has_one(key):
+    assert concept(key).strip()
+
+
+def test_an_unknown_concept_key_is_a_hard_error():
+    with pytest.raises(KeyError):
+        concept("no-such-panel")
+
+
+@pytest.mark.parametrize("key", sorted(CONCEPTS))
+def test_no_single_explanation_becomes_a_wall(key):
+    """A hover nobody finishes reading is a hover nobody read."""
+    words = len(CONCEPTS[key].render().split())
+    assert words <= 120, f"{key} is {words} words"
+
+
+def test_the_stage_glossary_names_every_stage_the_pipeline_runs():
+    """The row explains the run, so a stage the run has cannot be missing."""
+    from qa.cli import STAGE_NAMES
+
+    text = concept("stages")
+    missing = [name for name in STAGE_NAMES if name not in text]
+    assert not missing, "the stage row explains: " + ", ".join(missing)
+
+
+def test_the_elapsed_explanation_puts_the_number_in_context():
+    """"Took 8m" means nothing without knowing what it would be elsewhere."""
+    text = concept("elapsed")
+    assert "GPU" in text and "CPU" in text
+
+
+def test_the_storage_explanations_say_what_survives():
+    assert "rebuilds" in concept("scratch")
+    assert "downloaded again" in concept("media")
+    assert "listen list" in concept("findings_kept")
 
 
 # Learn-more links resolve in tests/test_docs.py, with the other cross
@@ -300,15 +388,61 @@ def test_the_docs_tab_reads_through_one_function():
 
 def test_the_help_module_holds_the_words_and_the_pages_do_not():
     """The whole point of the layer: one place to prune."""
-    for name in ("app.py", "run_view.py", "results_view.py"):
+    pages = ("app.py", "run_view.py", "results_view.py", "storage_view.py")
+    for name in pages:
         source = (ROOT / "qa" / "web" / name).read_text(encoding="utf-8")
         for line in source.splitlines():
             stripped = line.strip()
             if not stripped.startswith("help="):
                 continue
-            assert "tooltip(" in stripped, (
-                f"qa/web/{name} writes a tooltip inline: {stripped}"
+            assert "tooltip(" in stripped or "concept(" in stripped, (
+                f"qa/web/{name} writes help text inline: {stripped}"
             )
+
+
+# Every key a page asks for, read out of the pages themselves.
+KEY_CALL = re.compile('(tooltip|concept)[(]["]([a-z_]+)["][)]')
+
+
+def help_keys() -> set[tuple[str, str, str]]:
+    found = set()
+    for path in sorted((ROOT / "qa" / "web").glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for accessor, key in KEY_CALL.findall(text):
+            found.add((path.name, accessor, key))
+    return found
+
+
+def test_the_pages_do_ask_for_help_text():
+    """A regex that matches nothing would pass the next test forever."""
+    assert len(help_keys()) > 20
+
+
+def test_every_key_a_page_asks_for_exists():
+    """The direction the other guard does not cover.
+
+    Trimming the module to fit the budget removed two keys and left the calls
+    behind, and the first anyone knew of it was a KeyError traceback where the
+    Storage tab should have been. Pruning words is meant to be safe, so the
+    thing that makes it safe is this test rather than care.
+    """
+    known = {"tooltip": set(TOOLTIPS), "concept": set(CONCEPTS)}
+    missing = [
+        f"{page} asks for {accessor}({key!r})"
+        for page, accessor, key in sorted(help_keys())
+        if key not in known[accessor]
+    ]
+    assert not missing, "; ".join(missing)
+
+
+def test_no_help_text_is_written_and_never_shown():
+    """Words in the module that no page asks for are words nobody reads.
+
+    Not a failure, but the budget is spent on them, so they are worth seeing.
+    """
+    asked = {key for _, _, key in help_keys()}
+    unused = sorted((set(TOOLTIPS) | set(CONCEPTS)) - asked)
+    assert not unused, "written but never shown: " + ", ".join(unused)
 
 
 def test_the_helptext_module_is_the_only_place_the_words_live():

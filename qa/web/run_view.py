@@ -27,7 +27,7 @@ from qa.jobs import (
 )
 from qa.library import list_courses, resolve_library
 from qa.util import QAError
-from qa.web.helptext import tooltip
+from qa.web.helptext import concept, tooltip
 
 REFRESH_S = 2
 
@@ -64,9 +64,26 @@ def start_panel() -> None:
         )
         return
 
-    labels = {c.label: c for c in courses}
+    # A course whose media has been freed for disk space cannot be run until
+    # it is ingested again. Saying so in the picker beats failing at the
+    # ingest stage with a missing file nobody deleted on purpose.
+    from qa.cleanup import reclaimed_at
+
+    labels = {}
+    for entry in courses:
+        when = reclaimed_at(entry.path)
+        labels[f"{entry.label} (files removed {when})" if when else entry.label] = entry
     chosen = st.selectbox("Course", options=list(labels))
     course = labels[chosen]
+
+    freed = reclaimed_at(course.path)
+    if freed:
+        st.warning(
+            f"This course's delivered files were removed on {freed} to free "
+            "disk space. Its results and packets are still on the Results tab; "
+            "to run it again, download the delivery and bring it back through "
+            "Intake."
+        )
 
     devices = probe()
     names = {d.key: d.display for d in devices}
@@ -102,7 +119,7 @@ def start_panel() -> None:
             "that have not changed. This stays on until you turn it off."
         )
 
-    if st.button("Start run", type="primary"):
+    if st.button("Start run", type="primary", disabled=bool(freed)):
         try:
             status = submit(
                 course.path,
@@ -156,12 +173,15 @@ def _numbers(status) -> None:
     # something untrue about itself, which is the whole class of bug this
     # session was about. A run that has ended has no time remaining.
     if status.state in {DONE, FAILED}:
-        columns[1].metric("Took", _clock(status.elapsed_s))
+        columns[1].metric(
+            "Took", _clock(status.elapsed_s), help=concept("elapsed")
+        )
         return
 
     columns[1].metric(
         "Time remaining",
         _clock(status.eta_s) if status.eta_s is not None else "measuring",
+        help=concept("time_remaining"),
     )
     if status.eta_s is None:
         st.caption("The estimate appears once the first topic has finished.")
@@ -179,7 +199,9 @@ def _stage_row(status) -> None:
             marks.append(f"**{name}**")
         else:
             marks.append(name)
-    st.caption(" → ".join(marks))
+    # One mark for the whole row. Streamlit renders this as a single caption,
+    # so there is nowhere to hang eight; the concept text is the glossary.
+    st.caption(" → ".join(marks), help=concept("stages"))
 
 
 def _topics(status) -> None:

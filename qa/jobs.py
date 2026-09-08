@@ -256,6 +256,32 @@ class JobStore(Protocol):
     def list(self) -> list[JobStatus]: ...
 
 
+# Windows refuses to replace a file while any process has the destination
+# open, so the progress view reading a record every two seconds can make the
+# run that writes it every second die with "Access is denied". That is how it
+# was found: the end to end liveness test failed about one run in eight, and
+# the run had marked itself FAILED with a PermissionError from its own status
+# write. A page cannot be allowed to kill the run it is watching.
+#
+# The reader below already retries its half of this race. This is the other
+# half, and it was missing. Worst case here is 2.25 seconds of backoff on a
+# write that normally takes microseconds.
+REPLACE_ATTEMPTS = 10
+REPLACE_BACKOFF_S = 0.05
+
+
+def _replace(temporary: Path, target: Path) -> None:
+    """os.replace, allowing for a reader that has the destination open."""
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            temporary.replace(target)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_BACKOFF_S * (attempt + 1))
+
+
 class FileJobStore:
     def __init__(self, root: Path | None = None) -> None:
         self.root = Path(root) if root else user_data_dir() / JOBS_DIR
@@ -289,7 +315,7 @@ class FileJobStore:
         temporary.write_text(
             json.dumps(status.to_dict(), indent=2) + "\n", encoding="utf-8"
         )
-        temporary.replace(target)
+        _replace(temporary, target)
 
     def read(self, job_id: str) -> JobStatus:
         path = self.path(job_id)
@@ -367,7 +393,15 @@ class ProgressWatcher:
             self.status.stage = name
             self.status.stage_index = index
             self.status.stage_total = total
-        self.store.write(self.status)
+        # Called from the run's own thread, unlike scan, so an exception here
+        # lands in run_job's handler and marks the run FAILED. The watcher
+        # thread already refuses to take the run down with it; progress
+        # reporting from this side must refuse too. The next scan, a second
+        # later, writes the same record again.
+        try:
+            self.store.write(self.status)
+        except OSError:
+            pass
 
     def scan(self) -> None:
         with self._lock:
@@ -694,6 +728,29 @@ def _reviewer(course_dir: Path) -> str:
     return str(data.get("reviewed_by") or "").strip()
 
 
+def running_for(course_dir: Path, store: JobStore | None = None) -> JobStatus | None:
+    """The run in progress for this course, if there is one.
+
+    Asked of the operating system rather than of the record: a job whose
+    process has died still claims to be running, and treating that claim as
+    fact leaves a course nobody can run, and nobody can tidy up, until they
+    delete a file they have never heard of. See D29.
+
+    One function, because `submit` refusing a second run and `qa.cleanup`
+    refusing to delete files underneath a live one are the same question, and
+    two copies of it would eventually answer it differently.
+    """
+    store = store or FileJobStore()
+    course_dir = Path(course_dir)
+    for existing in store.list():
+        if Path(existing.course_dir) != course_dir:
+            continue
+        if resolve(existing, store).state in {DONE, FAILED}:
+            continue
+        return existing
+    return None
+
+
 def submit(
     course_dir: Path, options: dict | None = None, store: JobStore | None = None
 ) -> JobStatus:
@@ -714,15 +771,10 @@ def submit(
     # each keep invalidating the other's work. Found the hard way: a forced run
     # and a second run on the same folder both re-transcribed the whole course
     # and neither finished.
-    for existing in store.list():
-        if Path(existing.course_dir) != course_dir:
-            continue
-        # Against the process, not against the record. A job whose process has
-        # died still claims to be running, and refusing a new run on the
-        # strength of a dead one leaves the course unrunnable until somebody
-        # deletes a file they have never heard of.
-        if resolve(existing, store).state in {DONE, FAILED}:
-            continue
+    # Against the process, not against the record; running_for carries that
+    # reasoning and is shared with the cleanup guard.
+    existing = running_for(course_dir, store)
+    if existing is not None:
         raise JobError(
             f"A run for this course is already in progress ({existing.id}, "
             f"{existing.stage or 'starting'}).\n"

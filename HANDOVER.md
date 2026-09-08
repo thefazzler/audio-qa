@@ -105,13 +105,46 @@ words a new person needs are inside the app rather than in a folder they have
 to be told about. Fields that can be got wrong expensively carry a hover
 tooltip.
 
-**Every word of it lives in `qa/web/helptext.py`**, tooltips and tour alike, as
-a dict of key to text, and the whole layer is capped at 500 words by a test.
-That is where you edit the help, and the only place. If a draft goes over the
-budget, cut it; do not raise the number. See **D30**.
+**Every word of it lives in `qa/web/helptext.py`**, tooltips, tour and panel
+explanations alike, as dicts of key to text. That is where you edit the help,
+and the only place. Two budgets, 500 words each, both held by tests: what you
+read while working (fields, columns, the tour) and what you read while learning
+(what a stage does, what a metric means). If a draft goes over, cut it; do not
+raise the number. See **D30** and **D31**.
 
 The Docs tab reads documents and never writes one, which is also a rule rather
 than an omission: git stays the only way any of this content changes.
+
+## Getting disk space back
+
+A course costs about 225 MB in the library and about 1 MB of that is the
+answer. The **Storage** tab in `qa-web` shows every course, what it is using
+and what of it can go, and removes it in two tiers.
+
+**Scratch audio** is the demuxed wav, roughly 45 MB a course. Derived from the
+delivered media, rebuilt by the ingest stage in seconds, and the course stays
+runnable without it. Nothing to weigh up.
+
+**Delivered media** is the narration and the script document, the other 175 MB
+or so. Removing it frees better than 99 percent of a course. Everything the run
+found stays readable, every packet is untouched, and the course keeps
+`course.yaml` so it is still listed and still opens on the Results tab. What it
+cannot do is run: the delivery has to come back from SharePoint and through
+intake first. A reclaimed course says so in the run picker and on its results.
+
+**Findings are never removed by any of it**, and that includes the per-topic
+`discrepancies_<topic>.json` files, because the listen list is rebuilt from
+those every time the Results tab opens. Deleting them would not raise an error;
+it would render an empty listen list, which reads as a clean course. See
+**D31**, which is the reason that sentence is in this document.
+
+Packets have their own controls on the same tab: archive them into a zip beside
+themselves, delete them, or both. Originals are only removed once the archive
+has been read back and seen to hold them.
+
+`qa/cleanup.py` is where the logic lives and it has no CLI. The web layer only
+arranges it and asks for confirmation, so the rule about findings holds for
+anything else that calls it later.
 
 ## Two front doors, one engine
 
@@ -128,7 +161,8 @@ people who would rather not open a terminal. They call the same functions.
     qa/results.py          composing a finished run for reading
     qa/library.py          where courses live, and where packets go
     qa/web/                Streamlit pages, no pipeline logic
-    qa/web/helptext.py     every tooltip and tour word, and the budget test
+    qa/web/helptext.py     every tooltip and tour word, and the budget tests
+    qa/cleanup.py          freeing disk space without losing a finding
 
 The test of the layering: moving this to a server should change only `qa/web/`.
 If you find yourself writing "run a course" logic in the web layer, stop.
@@ -187,7 +221,14 @@ rather than its record, so a run whose process died does not leave the course
 unrunnable; see **D29**. Packets are the exception and are never overwritten by
 anything, which is the point of D28.
 
-**A status record is a claim, not a fact.** `qa/jobs.py` writes what a run says
+**A status record is a claim, not a fact, and writing one must not hurt the
+run.** On Windows a file cannot be replaced while a reader has it open, so the
+progress view polling a record every two seconds could make the run writing it
+every second die with "Access is denied" — a page killing the run it was
+watching. The write retries now, and progress reporting can no longer raise
+into the run. See **D32**.
+
+The older half of the same subject: `qa/jobs.py` writes what a run says
 about itself, and a run that dies stops saying anything. Every reader goes
 through `resolve()`, which checks the record against the operating system and
 against whether a packet exists, and heals it. If you add a reader, use

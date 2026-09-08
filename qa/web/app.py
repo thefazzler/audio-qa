@@ -569,8 +569,8 @@ def main() -> None:
     tour.link(st.session_state)
     tour.panel(st.session_state)
 
-    intake_tab, runs_tab, results_tab, docs_tab = st.tabs(
-        ["Intake", "Runs", "Results", "Docs"]
+    intake_tab, runs_tab, results_tab, storage_tab, docs_tab = st.tabs(
+        ["Intake", "Runs", "Results", "Storage", "Docs"]
     )
     with runs_tab:
         from qa.jobs import FileJobStore
@@ -592,6 +592,11 @@ def main() -> None:
         from qa.web.results_view import results_panel
 
         results_panel()
+
+    with storage_tab:
+        from qa.web.storage_view import storage_panel
+
+        storage_panel()
 
     with docs_tab:
         from qa.web.docs_view import docs_panel
