@@ -27,6 +27,7 @@ from qa.jobs import (
 )
 from qa.library import list_courses, resolve_library
 from qa.util import QAError
+from qa.web.helptext import tooltip
 
 REFRESH_S = 2
 
@@ -76,16 +77,13 @@ def start_panel() -> None:
         index=[d.key for d in devices].index(default_device(devices)),
         format_func=lambda key: names[key],
         horizontal=True,
+        help=tooltip("device"),
     )
     model = columns[1].selectbox(
-        "Model", options=["large-v3", "medium"], help="medium is faster and rougher"
+        "Model", options=["large-v3", "medium"], help=tooltip("model")
     )
     force = columns[2].checkbox(
-        "Re-transcribe everything",
-        help=(
-            "Off, only files whose contents changed are transcribed again. "
-            "On, every topic is decoded from scratch."
-        ),
+        "Re-transcribe everything", help=tooltip("force")
     )
 
     used, note = effective_device(device)
@@ -381,7 +379,7 @@ def watch_panel() -> None:
         "Which run",
         options=keys,
         index=index,
-        help="Course, start time, device, duration, differences found, reviewer.",
+        help=tooltip("run_picker"),
     )
     job_id = labels[chosen]
     st.session_state.watching = job_id

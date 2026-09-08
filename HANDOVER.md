@@ -95,6 +95,24 @@ cadence. Long pauses are covered by the audio stage; nothing else is.
 The judgment prompt requires every report to say this. Do not remove that
 requirement.
 
+## New-user onboarding is the tour and the Docs tab
+
+Nobody has to stand next to a new person for their first course. `qa-web`
+offers a six-step tour on its first launch on a machine, reachable forever
+after from the "Tour" link at the foot of the sidebar, and its Docs tab renders
+this file, `README.md`, `COMMANDS.md` and `DECISIONS.md` read-only, so the
+words a new person needs are inside the app rather than in a folder they have
+to be told about. Fields that can be got wrong expensively carry a hover
+tooltip.
+
+**Every word of it lives in `qa/web/helptext.py`**, tooltips and tour alike, as
+a dict of key to text, and the whole layer is capped at 500 words by a test.
+That is where you edit the help, and the only place. If a draft goes over the
+budget, cut it; do not raise the number. See **D30**.
+
+The Docs tab reads documents and never writes one, which is also a rule rather
+than an omission: git stays the only way any of this content changes.
+
 ## Two front doors, one engine
 
 `qa-run` is the command line. `qa-web` is a local Streamlit interface for
@@ -110,6 +128,7 @@ people who would rather not open a terminal. They call the same functions.
     qa/results.py          composing a finished run for reading
     qa/library.py          where courses live, and where packets go
     qa/web/                Streamlit pages, no pipeline logic
+    qa/web/helptext.py     every tooltip and tour word, and the budget test
 
 The test of the layering: moving this to a server should change only `qa/web/`.
 If you find yourself writing "run a course" logic in the web layer, stop.

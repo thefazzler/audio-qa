@@ -177,8 +177,14 @@ def test_run_packet_writes_to_the_output_folder_and_records_where(tmp_path):
 
     written = Path(result["path"])
     assert written.parent == destination
-    assert written.name.startswith("it_spisccc26_10_enus_2026-09-01_")
+    # Both halves of the name come from the run's own clock, so a packet can
+    # never carry two different days in one name. --date sets what the packet
+    # says about itself, not what it is called; asserting the injected date in
+    # the filename passed only on the day this test was written. See D28.
+    today = datetime.now().strftime("%Y-%m-%d")
+    assert written.name.startswith(f"it_spisccc26_10_enus_{today}_")
     assert written.name.endswith("_cpu-int8.md")
+    assert "| Date | 2026-09-01 |" in written.read_text(encoding="utf-8")
     assert not list((course / "qa_out").glob("*.md"))
 
     marker = json.loads((course / "qa_out" / "packet_index.json").read_text("utf-8"))

@@ -1,4 +1,4 @@
-"""The documents must not point at decisions that do not exist.
+"""The documents must not point at things that do not exist.
 
 A dangling cross reference is invisible until someone follows it, and the one
 that prompted this test pointed at a decision that had never been written: the
@@ -82,6 +82,48 @@ def test_no_placeholder_references_survive():
         text = path.read_text(encoding="utf-8")
         for pattern in patterns:
             assert pattern not in text, f"{name} still contains {pattern!r}"
+
+
+# ---------------------------------------------------------------------------
+# The help layer points into these documents too
+# ---------------------------------------------------------------------------
+# A "learn more" pointer in a tooltip or a tour step is the same kind of claim
+# as a D reference, and fails the same way: invisible until somebody follows
+# it. So it is checked here rather than in a parallel file of its own.
+
+def test_there_is_at_least_one_learn_more_link():
+    from qa.web.helptext import links
+
+    assert links()
+
+
+def test_every_learn_more_link_resolves_to_a_real_file_and_heading():
+    from qa.web import docs_view
+    from qa.web.helptext import links
+
+    broken = []
+    for link in links():
+        if docs_view.find(link.doc) is None:
+            broken.append(f"{link.doc} is not a document the Docs tab lists")
+        elif not docs_view.resolves(link.doc, link.heading):
+            broken.append(f"{link.doc} has no heading {link.heading!r}")
+    assert not broken, "; ".join(broken)
+
+
+def test_every_document_the_docs_tab_lists_is_in_this_repository():
+    from qa.web.helptext import DOCS
+
+    missing = [doc.key for doc in DOCS if not doc.exists]
+    assert not missing, "listed in the Docs tab but not here: " + ", ".join(missing)
+
+
+def test_a_learn_more_link_reads_as_a_pointer_a_person_can_follow():
+    from qa.web.helptext import links
+
+    for link in links():
+        rendered = link.render()
+        assert rendered.startswith("Learn more: ")
+        assert link.doc in rendered
 
 
 def test_the_standing_rule_is_recorded():

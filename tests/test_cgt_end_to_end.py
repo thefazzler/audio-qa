@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -176,8 +177,12 @@ def test_the_packet_describes_a_word_script_not_a_slide_deck(run):
 
 def test_the_packet_is_named_for_the_run_and_lands_in_the_output_folder(run):
     packet = next(run["output"].glob("*.md"))
-    assert packet.name.startswith(f"{CODE}_2026-09-01_")
+    # Named for the run's own start, both halves, not for --date. --date sets
+    # the date the packet states about itself. See D28.
+    today = datetime.now().strftime("%Y-%m-%d")
+    assert packet.name.startswith(f"{CODE}_{today}_")
     assert packet.name.endswith("_cpu-int8.md")
+    assert "| Date | 2026-09-01 |" in packet.read_text(encoding="utf-8")
     assert not list((run["course"] / "qa_out").glob("*.md"))
     assert (run["course"] / "qa_out" / "packet_index.json").exists()
 

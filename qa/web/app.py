@@ -46,6 +46,7 @@ from qa.script_source import (
     default_source,
 )
 from qa.util import QAError
+from qa.web.helptext import tooltip
 
 PAGE_TITLE = "Audio QA"
 
@@ -341,22 +342,14 @@ def _script_controls(
         options=topics,
         default=[t for t in topics if was.get(t) == OUTLINE],
         key="script-outline",
-        help=(
-            "The script document describes these topics rather than scripting "
-            "them. They are excluded from word-level alignment and their "
-            "transcripts run at full length in the packet."
-        ),
+        help=tooltip("outline_only"),
     )
     none = st.multiselect(
         "No script at all",
         options=[t for t in topics if t not in outline],
         default=[t for t in topics if was.get(t) == NONE],
         key="script-none",
-        help=(
-            "Nothing in the delivery says what these topics were supposed to "
-            "say. They are still transcribed, measured and reported; what they "
-            "cannot have is a comparison."
-        ),
+        help=tooltip("no_script"),
     )
     spoken_for = set(outline) | set(none)
     freeform = st.multiselect(
@@ -364,7 +357,7 @@ def _script_controls(
         options=[t for t in topics if t not in spoken_for],
         default=[t for t in topics if was.get(t) == FREEFORM and t not in spoken_for],
         key="script-freeform",
-        help="For the occasional vendor demo that arrives with its own script.",
+        help=tooltip("own_script"),
     )
 
     chosen: dict[str, tuple[str, str]] = {}
@@ -419,7 +412,7 @@ def _form(selection) -> IntakeForm | None:
         "Project type",
         options=types,
         index=types.index(known.project_type) if known.project_type in types else 0,
-        help="VENDOR routes findings to an edit sheet; CGT to a remediation plan.",
+        help=tooltip("project_type"),
     )
     ready = _script_source_panel(selection, project_type)
 
@@ -436,6 +429,7 @@ def _form(selection) -> IntakeForm | None:
             index=[d.key for d in devices].index(default_device(devices)),
             format_func=lambda key: labels[key],
             horizontal=True,
+            help=tooltip("device"),
         )
         for missing in unusable:
             st.caption(f"{missing.label} unavailable: {missing.reason}")
@@ -450,7 +444,7 @@ def _form(selection) -> IntakeForm | None:
         reviewed_by = st.text_input(
             "Reviewed by",
             value=known.reviewed_by or last_reviewer(),
-            help="Recorded with the run and carried into the packet.",
+            help=tooltip("reviewed_by"),
         )
         notes = st.text_area("Notes", value=known.notes, height=80, placeholder="Optional")
 
@@ -567,7 +561,17 @@ def main() -> None:
     )
     _sidebar()
 
-    intake_tab, runs_tab, results_tab = st.tabs(["Intake", "Runs", "Results"])
+    # The tour offers itself once per machine, and the link brings it back
+    # forever after. Both live in the sidebar, which is on every tab.
+    from qa.web import tour
+
+    tour.autostart(st.session_state)
+    tour.link(st.session_state)
+    tour.panel(st.session_state)
+
+    intake_tab, runs_tab, results_tab, docs_tab = st.tabs(
+        ["Intake", "Runs", "Results", "Docs"]
+    )
     with runs_tab:
         from qa.jobs import FileJobStore
         from qa.web.run_view import start_panel, watch_panel
@@ -588,6 +592,11 @@ def main() -> None:
         from qa.web.results_view import results_panel
 
         results_panel()
+
+    with docs_tab:
+        from qa.web.docs_view import docs_panel
+
+        docs_panel()
 
     with intake_tab:
         _intake()

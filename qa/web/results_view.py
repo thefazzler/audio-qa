@@ -29,6 +29,7 @@ from qa.results import (
 )
 from qa.device import DEVICE_NOTE, probe
 from qa.util import QAError
+from qa.web.helptext import tooltip
 
 
 @st.cache_data(show_spinner=False)
@@ -124,7 +125,7 @@ def _checks_table(results) -> None:
 
 
 def _listen_list(results) -> None:
-    st.subheader("Listen list")
+    st.subheader("Listen list", help=tooltip("listen_list"))
     if not results.listen:
         st.success(
             "Nothing on the listen list. Note that this means no site fell "
@@ -161,6 +162,13 @@ def _listen_list(results) -> None:
         ],
         width="stretch",
         hide_index=True,
+        column_config={
+            # MATCH, LOW CONFIDENCE and MISHEARD are written into this column.
+            # Explained once here rather than in every cell that carries one.
+            "why": st.column_config.TextColumn(
+                "why", help=tooltip("watchlist_column")
+            )
+        },
     )
 
     watchlist = results.watchlist or {}
@@ -258,8 +266,13 @@ def _packet_history(results) -> None:
 
 
 def _stats(results) -> None:
-    """Telemetry, off by default. One home for it, a click away."""
-    with st.expander("Stats for nerds"):
+    """Telemetry, off by default. One home for it, a click away.
+
+    The heading carries the panel's one help mark, above the expander rather
+    than inside it, so the question can be answered without opening it.
+    """
+    st.subheader("Stats for nerds", help=tooltip("stats_panel"))
+    with st.expander("Show the numbers"):
         stats = results.stats
         st.caption(
             "Everything here was recorded by the pipeline or measured about "

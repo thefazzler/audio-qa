@@ -1259,3 +1259,67 @@ The general rule, which is worth more than any of the fixes: **a summary
 describes the thing it is attached to.** A stage summary describes that stage's
 run of that stage. A packet header describes the run that produced the packet.
 Where the honest answer is "this did not happen here", that is the answer.
+
+## D30. Help and training are one layer, from one module, under one budget
+
+A new person's first course had to be runnable without somebody sitting beside
+them, and a returning person had to be able to answer "what does this field do"
+without leaving the page. Those are the same problem, so they get one answer
+rather than two: the same short texts serve both, surfaced three ways.
+
+**Field tooltips** on the inputs where getting it wrong costs something a label
+cannot convey: project type, because it routes findings and decides which
+document is read as the script; outline-only topics, because marking one
+wrongly hides real defects; the device selector, whose greyed-out state has to
+say why it is grey and that the run proceeds on CPU rather than failing;
+reviewed-by, because the name travels into course.yaml and the packet header;
+the listen list; the watchlist result wording; and the stats panel. Fields
+whose label already says everything, course number among them, get none. No
+tooltip goes inside a results-table cell: a result that needs explaining is
+explained once, in its column header, because MISHEARD appears in dozens of
+rows and means the same thing in all of them.
+
+**A first-run tour**, six steps, shown once per machine and reachable forever
+after from a "Tour" link in the sidebar. Skippable from step one, and dismissal
+with the X or Esc records exactly what Skip records: somebody who has left has
+decided, and a dialog that reappears on the next click is an obstacle rather
+than an offer. The last step is the one idea the tool most needs a new user to
+hold: a discrepancy is a measurement rather than a defect, a watchlist MATCH
+means heard as expected rather than pronounced correctly, and the listen list
+is the human's job that nothing downstream settles.
+
+**A Docs tab** rendering the repository's own documents. **Read-only is a rule,
+not an omission**: the portal displays documents and never stores or edits
+them, and git remains the only way their content changes. A document edited
+through a web form would be a change with no commit, no review and no history,
+in the files a successor is told to trust. There is no write path in
+`qa/web/docs_view.py` and a test asserts there is none.
+
+### One source of words, one budget
+
+Every tooltip and every tour step lives in `qa/web/helptext.py`, a dict of key
+to text. Not for tidiness: help text scattered through page code drifts in
+voice, cannot be reviewed as a whole, and gives the person who has to prune it
+nothing to open. One module means the layer is readable on one screen and
+prunable in one edit.
+
+**The budget is 500 words, one page, enforced by a test.** When a draft goes
+over, the rule is to cut until it fits and never to raise the number. The
+reasoning is the same one behind D11's packet length: terse and read beats
+thorough and skipped, and help nobody finishes is help nobody has. The first
+draft came in at 502 and four sentences were shortened; the layer now stands at
+497. That number is meant to stay uncomfortable.
+
+A tooltip or a step may carry one "learn more" pointer into a Docs tab section,
+and a test resolves every pointer to a real heading in a real file, extending
+the cross-reference test that already existed for D references rather than
+sitting in a parallel file. There are four, deliberately few. A link only earns
+its place where the section adds something the tooltip did not; a pointer that
+leads to a restatement teaches people to stop clicking.
+
+The Docs tab lists HANDOVER.md, README.md, COMMANDS.md and DECISIONS.md.
+DECISIONS.md is there because it is where the pronunciation layer's levels are
+written down, in D15, and because HANDOVER.md sends every successor to it.
+There is no separate pronunciation-levels document in this repository; if one
+is ever split out of D15, it is one line in `DOCS` and the test will hold the
+link.
