@@ -1,5 +1,105 @@
 # audio-qa
 
+## START HERE IF YOU ARE NEW
+
+Three steps on every platform: install three pieces of system software, get
+this folder onto the machine, run setup. Setup checks everything, installs
+what is safe to install, and proves the result by running the whole pipeline
+on a generated fixture. Then open the interface. On Windows nobody needs a
+terminal after step 1; on a Mac or Linux the terminal is three short lines.
+Nobody, anywhere, needs to know what a virtual environment is.
+
+### Windows 11
+
+1. **Install the system software.** Open a terminal (Start, type `terminal`)
+   and run these three lines. `winget` ships with Windows 11.
+
+       winget install --id Python.Python.3.12 -e
+       winget install --id Gyan.FFmpeg -e
+       winget install --id Git.Git -e
+
+   Close that terminal afterwards. A terminal opened before an install does
+   not see the new programs.
+
+2. **Get this folder.** Either
+
+       git clone https://github.com/thefazzler/audio-qa.git
+
+   or, without git, open https://github.com/thefazzler/audio-qa in a browser,
+   choose **Code**, then **Download ZIP**, and unzip it somewhere you will
+   find again.
+
+3. **Double-click `qa-setup.cmd`.** When it says Ready, **double-click
+   `qa-web.cmd`.** The interface opens in your browser.
+
+### macOS (Tahoe, Apple silicon)
+
+1. **Install the system software.** Open Terminal. If `brew` is not
+   installed yet, install Homebrew first with the one line at
+   https://brew.sh. Then:
+
+       brew install python@3.12 ffmpeg git
+
+   The version is pinned on purpose. A bare `brew install python` gives
+   3.14, which the ASR runtime cannot use yet; see Requirements below.
+
+2. **Get this folder.**
+
+       git clone https://github.com/thefazzler/audio-qa.git
+       cd audio-qa
+
+3. **Run setup, then open the interface.**
+
+       ./qa-setup.sh
+       ./qa-web.sh
+
+   From Finder, `qa-setup.command` and `qa-web.command` are the same two
+   programs under the extension Finder needs to open them in Terminal. The
+   first time, macOS may ask you to allow it: right-click, then Open.
+
+   An M-series Mac runs the pipeline on CPU. The GPU row in setup reads NOT
+   USABLE on a Mac, and that is expected: there is no CUDA on Apple silicon.
+
+### Linux
+
+1. **Install the system software.**
+
+       Debian, Ubuntu      sudo apt-get update && sudo apt-get install -y python3.12 python3.12-venv ffmpeg git
+       Fedora              sudo dnf install -y python3.12 ffmpeg-free git
+       RHEL, Rocky, Alma   sudo dnf install -y epel-release && sudo dnf install -y python3.12 ffmpeg-free git
+       Arch                sudo pacman -S --needed python ffmpeg git
+
+   Ubuntu 22.04 and older do not ship Python 3.12: run
+   `sudo add-apt-repository ppa:deadsnakes/ppa` first. Debian 12 ships 3.11,
+   which is fine: install `python3 python3-venv` instead.
+
+2. **Get this folder.**
+
+       git clone https://github.com/thefazzler/audio-qa.git
+       cd audio-qa
+
+3. **Run setup, then open the interface.**
+
+       ./qa-setup.sh
+       ./qa-web.sh
+
+### If setup says something is missing
+
+Setup never installs Python, ffmpeg or git. It prints one row per
+prerequisite with what it found, what is required, and the exact command
+for this machine, then stops. Run the command it prints, then run setup
+again. The only thing it cannot report on is Python itself, because setup
+is written in Python; the launchers cover that case and print the same
+kind of instruction.
+
+Setup is also the troubleshooting tool later, when something breaks after
+a Python or driver upgrade. In check mode it changes nothing:
+
+    qa-setup.cmd --check       Windows, from a terminal in this folder
+    ./qa-setup.sh --check      macOS and Linux
+
+## What this is
+
 Local synthetic-voice QA for Skillsoft course narration. Drop a course folder
 in, get a reconciliation packet out, paste the packet into Claude, receive a
 findings report.
@@ -42,44 +142,18 @@ keeps the LLM for judgment only. It also computes the completeness attestations
 the transcribers used to self-report, because an instrument that stopped early
 cannot honestly certify that it did not.
 
-## Install
-
-**On Windows, double-click `qa-setup.cmd`, then double-click `qa-web.cmd`.**
-That is the whole of it. The first checks what this machine needs, installs
-what is safe to install, prints the exact command for anything system wide it
-will not install for you, and finishes by running the whole pipeline on a
-generated fixture to prove the result works. The second opens the interface.
-
-Nobody reviewing narration should have to learn what a virtual environment is,
-and "activate the venv, then type qa-web" is where those instructions used to
-lose people.
-
-From a terminal, or on macOS and Linux, it is the same command underneath:
-
-    git clone https://github.com/thefazzler/audio-qa.git
-    cd audio-qa
-    python -m qa.setup
-
-Anything it reports as MISSING or VERSION MISMATCH in Python, git, ffmpeg or
-ffprobe is system software: run the command it prints, then run setup again.
-It will not install those for you.
-
-Once the virtual environment exists, `qa-setup` is on the path:
-
-    qa-setup --check     re-diagnose at any time, changing nothing
-
-Use `qa-setup --check` later as the troubleshooting tool, too. When something
-breaks after a Python or driver upgrade, it shows what changed.
-
 ## Requirements
 
 - **Python 3.11 or newer.** 3.12 is what this is developed against. Avoid 3.14
   for now: ctranslate2 does not publish wheels for it and faster-whisper falls
   back to a source build.
-- **ffmpeg**, on PATH. Used to demux audio out of video containers at the
-  ingest stage. The pipeline checks for it at startup and stops with an
-  actionable message if it is missing. It never installs system software for
-  you.
+- **ffmpeg** and **ffprobe**, on PATH. Used to demux audio out of video
+  containers at the ingest stage. The pipeline checks for both at startup and
+  stops with an actionable message if either is missing. The install commands
+  are at the top of this file; verify with `ffmpeg -version` and
+  `ffprobe -version`.
+- **git** is how the repository arrives and gets updated. Nothing in the
+  pipeline runs it, so a ZIP download works and setup does not stop for it.
 - About 3 GB of disk for the ASR model, downloaded once on first run.
 - **A GPU is optional.** Everything works on CPU, and the interface says so
   rather than greying out a choice with no explanation. An NVIDIA card with the
@@ -87,42 +161,37 @@ breaks after a Python or driver upgrade, it shows what changed.
   decode precision; findings are re-verified rather than assumed identical. See
   DECISIONS.md D23.
 
-### Installing ffmpeg
-
-    Windows      winget install --id Gyan.FFmpeg -e
-                 then reopen the shell so PATH refreshes
-
-    Debian/Ubuntu    sudo apt-get update && sudo apt-get install -y ffmpeg
-    RHEL/Rocky       sudo dnf install -y ffmpeg-free
-    macOS            brew install ffmpeg
-
-Verify with `ffmpeg -version` and `ffprobe -version`. Both are needed.
-
-On the future Linux server this is a deployment-time package for ops, not
-something this repo installs.
-
 ## Installing by hand
 
-`qa-setup` does all of this for you. These are here for anyone who would rather
-do it themselves, or who is packaging this elsewhere.
+Setup does all of this for you. These are here for anyone who would rather
+do it themselves, or who is packaging this elsewhere. Setup itself is
+`python -m qa.setup` from a checkout; the launchers only find a Python to run
+it with.
 
 With uv:
 
     uv venv --python 3.12
-    uv pip install -e ".[asr,dev]"
+    uv pip install -e ".[asr,web,dev]"
 
 With pip:
 
     py -3.12 -m venv .venv
-    .venv/Scripts/python -m pip install -e ".[asr,dev]"     # Windows
-    .venv/bin/python -m pip install -e ".[asr,dev]"         # Linux, macOS
+    .venv/Scripts/python -m pip install -e ".[asr,web,dev]"     # Windows
+    .venv/bin/python -m pip install -e ".[asr,web,dev]"         # Linux, macOS
 
 As a tool, once published internally:
 
     pipx install --python 3.12 audio-qa
 
 The `asr` extra pulls faster-whisper and ctranslate2. Without it every stage
-except transcription still runs.
+except transcription still runs. The `web` extra is the interface; `qa-run`
+works without it.
+
+Once installed, the commands live in the environment and are callable
+without activating anything:
+
+    .venv\Scripts\qa-run <course_dir>       Windows
+    .venv/bin/qa-run <course_dir>           macOS and Linux
 
 ## Course folder layout
 

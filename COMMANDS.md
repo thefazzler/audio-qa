@@ -2,7 +2,7 @@
 
 Three commands ship with this package, declared as console scripts in
 `pyproject.toml`. They are available after an editable install
-(`pip install -e ".[asr,dev]"`); each can also be run as a module
+(`pip install -e ".[asr,web,dev]"`); each can also be run as a module
 (`python -m qa.cli`, `python -m qa.new_course`, `python -m qa.terms`) without
 one.
 

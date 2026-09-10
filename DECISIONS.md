@@ -1467,3 +1467,47 @@ Worth noting for whoever meets this next: the bug is invisible on a machine
 nobody is watching, and it gets more likely the more attentively you watch. It
 would have shown up as occasional unexplained failures on somebody's desktop
 during the colleague pilot, with a packet on disk and a run that says it failed.
+
+## D33. The front door on every platform, and the one prerequisite setup cannot report
+
+Asked, of the README: does it tell a new person how to get this installed on
+their platform? It did for Windows once Python existed, and for nothing else.
+Five gaps, each fixed in code rather than in prose alone, because prose that
+says "run the command it prints" is only true when the program can run.
+
+**A new person reads nothing below the first screen.** The README now opens
+with START HERE IF YOU ARE NEW: three numbered steps each for Windows 11,
+macOS on Apple silicon, and Linux, with the exact install commands in the
+step rather than in a section further down. The old Install and Installing
+ffmpeg sections are gone; the same information said twice drifts.
+
+**Setup is written in Python, so a machine with no Python gets no help from
+it.** `qa-setup.cmd` used to fall through to `python`, which on Windows 11
+with nothing installed is a Microsoft Store stub that looks present and is
+not. Both launchers now try each candidate interpreter by running it, prefer
+the project's own environment when one exists, and when nothing runs they
+print the same table setup would have, with the platform's install command.
+On a Mac the candidate `/usr/bin/python3` is skipped unless the developer
+tools are installed, because without them it is a stub that opens a dialog.
+
+**macOS and Linux had no door at all.** `qa-setup.sh` and `qa-web.sh` are
+the two `.cmd` files rewritten for `sh`, same names, same messages, same
+behaviour with no environment. `qa-setup.command` and `qa-web.command` are
+one-line wrappers so Finder opens them in Terminal. `.gitattributes` pins
+LF on the shell files and CRLF on the batch files, because the author's
+machine has `core.autocrlf=true` and a shell script with CRLF fails with
+"bad interpreter", which nobody new can act on.
+
+**The hints were Debian's.** `install_hint` now reads `/etc/os-release` and
+answers in apt, dnf or pacman. The macOS Python hint pins `python@3.12`,
+because a bare `brew install python` is 3.14 and D9 applies, and it names the
+python.org installer for a machine without Homebrew.
+
+**Setup did not install the interface.** It installed `[asr,dev]`, so a
+fresh machine that followed the instructions to the letter ended at
+"streamlit is not installed". It installs `[asr,web,dev]` now and the package
+probe imports streamlit.
+
+**git blocked setup and nothing runs git.** It is how the repository arrives
+and updates, and that is all. The row stays, with the fix, marked optional,
+so a ZIP download is not stopped at setup for a tool the pipeline never calls.

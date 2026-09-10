@@ -250,8 +250,64 @@ def test_the_web_launcher_sends_people_to_setup_when_there_is_no_environment():
 def test_the_setup_launcher_survives_having_no_environment_yet():
     """Its whole job is to create the environment, so it cannot require one."""
     text = (ROOT / "qa-setup.cmd").read_text(encoding="utf-8")
-    assert "if not exist" in text
+    assert r'if exist ".venv\Scripts\python.exe"' in text
     assert "qa.setup" in text
+
+
+def test_the_setup_launcher_explains_a_machine_with_no_python_at_all():
+    """Setup is written in Python, so the launcher must cover the one
+    prerequisite setup cannot report. A Store stub that only looks like
+    Python must not count, so every candidate is actually run."""
+    text = (ROOT / "qa-setup.cmd").read_text(encoding="utf-8")
+    assert ":nopython" in text
+    assert "winget install --id Python.Python.3.12" in text
+    assert "python.org/downloads" in text
+    assert 'py -3.12 -c "import sys"' in text
+    assert 'python -c "import sys"' in text
+
+
+# The same two doors on macOS and Linux. Same names, same messages, same
+# behaviour when there is no environment and when there is no Python.
+
+@pytest.mark.parametrize("name", ["qa-setup.sh", "qa-web.sh"])
+def test_the_shell_launcher_runs_from_its_own_folder_with_lf_endings(name):
+    raw = (ROOT / name).read_bytes()
+    assert b"\r\n" not in raw, "CRLF in a shell script is 'bad interpreter'"
+    text = raw.decode("utf-8")
+    assert text.startswith("#!/bin/sh\n")
+    assert 'cd "$(dirname "$0")"' in text, "must not depend on the working directory"
+
+
+def test_the_shell_web_launcher_uses_the_projects_own_python():
+    text = (ROOT / "qa-web.sh").read_text(encoding="utf-8")
+    assert ".venv/bin/python -m qa.web.launch" in text
+    assert "qa-setup.sh" in text
+    assert "No environment here yet" in text
+
+
+def test_the_shell_setup_launcher_covers_every_way_python_can_be_absent():
+    text = (ROOT / "qa-setup.sh").read_text(encoding="utf-8")
+    assert "python3.12 python3.13 python3.11 python3" in text
+    assert "xcode-select -p" in text, "a fresh Mac's python3 is a stub"
+    assert "brew install python@3.12" in text
+    assert "apt-get install -y python3.12" in text
+    assert "dnf install -y python3.12" in text
+
+
+@pytest.mark.parametrize("role", ["setup", "web"])
+def test_the_finder_wrapper_is_the_shell_launcher_under_the_name_finder_needs(role):
+    text = (ROOT / f"qa-{role}.command").read_text(encoding="utf-8")
+    assert f"exec sh ./qa-{role}.sh" in text
+    assert 'cd "$(dirname "$0")"' in text
+
+
+def test_line_endings_are_pinned_for_every_launcher():
+    """core.autocrlf=true on the author's machine would otherwise ship CRLF
+    shell scripts to a Mac."""
+    text = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    assert "*.sh       text eol=lf" in text
+    assert "*.command  text eol=lf" in text
+    assert "*.cmd      text eol=crlf" in text
 
 
 @pytest.mark.parametrize("name", ["qa-setup.cmd", "qa-web.cmd"])

@@ -8,8 +8,9 @@ person standing next to them. That is the whole job.
 
 Two kinds of prerequisite, treated differently, per D2:
 
-  Checked and explained, never installed: Python, git, ffmpeg, ffprobe and the
-  CUDA runtime. These are system software. The command reports what it found,
+  Checked and explained, never installed: Python, ffmpeg, ffprobe, git and the
+  CUDA runtime. git and CUDA are reported but do not block: nothing in the
+  pipeline runs git, and the GPU is optional. These are system software. The command reports what it found,
   what is required, and the exact command to fix it on this platform, and then
   gets out of the way.
 
@@ -103,23 +104,76 @@ def _system() -> str:
     return platform.system()
 
 
+def _linux_family() -> str:
+    """Which package manager a Linux box speaks: "debian", "rhel", "arch" or "".
+
+    Read from /etc/os-release so a Fedora machine is not told to run apt-get.
+    Unknown or unreadable means "debian", because that is the most common
+    answer and the hint is a suggestion the person can see and correct.
+    """
+    ids: list[str] = []
+    try:
+        for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition("=")
+            if key in {"ID", "ID_LIKE"}:
+                ids += value.strip().strip('"').split()
+    except OSError:
+        return "debian"
+    for family, names in (
+        ("debian", {"debian", "ubuntu", "linuxmint", "pop", "raspbian"}),
+        ("rhel", {"rhel", "fedora", "centos", "rocky", "almalinux"}),
+        ("arch", {"arch", "manjaro", "endeavouros"}),
+    ):
+        if set(ids) & names:
+            return family
+    return "debian"
+
+
 def install_hint(tool: str) -> str:
+    """The exact command to install a system tool on this machine.
+
+    Windows uses winget, which ships with Windows 11. macOS uses Homebrew,
+    with the python.org installer named as the route that needs no Homebrew.
+    Linux picks the package manager from /etc/os-release.
+    """
     system = _system()
+    linux = {
+        "debian": {
+            "ffmpeg": "sudo apt-get update && sudo apt-get install -y ffmpeg",
+            "git": "sudo apt-get install -y git",
+            "python": (
+                f"sudo apt-get install -y python{PREFERRED_PYTHON} "
+                f"python{PREFERRED_PYTHON}-venv  "
+                "(Ubuntu 22.04 or older: sudo add-apt-repository "
+                "ppa:deadsnakes/ppa first)"
+            ),
+        },
+        "rhel": {
+            "ffmpeg": "sudo dnf install -y ffmpeg-free",
+            "git": "sudo dnf install -y git",
+            "python": f"sudo dnf install -y python{PREFERRED_PYTHON}",
+        },
+        "arch": {
+            "ffmpeg": "sudo pacman -S --needed ffmpeg",
+            "git": "sudo pacman -S --needed git",
+            "python": "sudo pacman -S --needed python",
+        },
+    }
     hints = {
         "ffmpeg": {
             "Windows": "winget install --id Gyan.FFmpeg -e",
-            "Linux": "sudo apt-get update && sudo apt-get install -y ffmpeg",
             "Darwin": "brew install ffmpeg",
         },
         "git": {
             "Windows": "winget install --id Git.Git -e",
-            "Linux": "sudo apt-get install -y git",
-            "Darwin": "brew install git",
+            "Darwin": "xcode-select --install   (or: brew install git)",
         },
         "python": {
             "Windows": f"winget install --id Python.Python.{PREFERRED_PYTHON} -e",
-            "Linux": f"sudo apt-get install -y python{PREFERRED_PYTHON} python{PREFERRED_PYTHON}-venv",
-            "Darwin": f"brew install python@{PREFERRED_PYTHON}",
+            "Darwin": (
+                f"brew install python@{PREFERRED_PYTHON}   (no Homebrew? the "
+                f"macOS installer at https://python.org/downloads works too)"
+            ),
         },
     }
     fallback = {
@@ -127,7 +181,16 @@ def install_hint(tool: str) -> str:
         "git": "install git from https://git-scm.com/downloads",
         "python": f"install Python {PREFERRED_PYTHON} from https://python.org",
     }
+    if system == "Linux":
+        return linux[_linux_family()].get(tool) or fallback.get(tool, "")
     return hints.get(tool, {}).get(system) or fallback.get(tool, "")
+
+
+def launcher(role: str) -> str:
+    """How to start setup or the interface on this platform, in one phrase."""
+    if _system() == "Windows":
+        return f"double-click qa-{role}.cmd"
+    return f"./qa-{role}.sh"
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +280,20 @@ def check_tool(name: str, args: list[str] | None = None) -> Requirement:
 
 
 def check_git() -> Requirement:
-    return check_tool("git")
+    """git is how the repository arrives and updates. Nothing here runs it.
+
+    Optional, so a checkout that came as a ZIP download is not stopped by a
+    tool the pipeline never calls. The row still shows, with the fix, because
+    the person will want it the first time they need an update.
+    """
+    found = check_tool("git")
+    found.optional = True
+    if not found.satisfied:
+        found.detail = (
+            "Only needed to clone or update this repository. A ZIP download "
+            "runs without it."
+        )
+    return found
 
 
 def check_ffmpeg() -> Requirement:
@@ -380,17 +456,18 @@ def check_venv(venv: Path | None = None) -> Requirement:
 
 
 def check_packages(venv: Path | None = None) -> Requirement:
-    """Whether the project and its ASR extra are importable in the venv."""
+    """Whether the project and its asr and web extras are importable in the venv."""
     executable = venv_python(venv)
     if not executable.exists():
         return Requirement(
             "Python packages", MISSING, "no virtual environment yet",
-            'the project plus [asr,dev]', "qa-setup will install them"
+            "the project plus [asr,web,dev]", "qa-setup will install them"
         )
     probe = subprocess.run(
         [
             str(executable), "-c",
-            "import qa, faster_whisper, soundfile, pptx, docx, yaml, numpy, pytest;"
+            "import qa, faster_whisper, soundfile, pptx, docx, yaml, numpy, "
+            "streamlit, pytest;"
             "import importlib.metadata as m;"
             "print(m.version('faster-whisper'))",
         ],
@@ -402,12 +479,12 @@ def check_packages(venv: Path | None = None) -> Requirement:
         return Requirement(
             "Python packages", MISSING,
             missing[-1] if missing else "not importable",
-            "the project plus [asr,dev]",
-            'pip install -e ".[asr,dev]"',
+            "the project plus [asr,web,dev]",
+            'pip install -e ".[asr,web,dev]"',
         )
     return Requirement(
         "Python packages", OK, f"faster-whisper {probe.stdout.strip()}",
-        "the project plus [asr,dev]",
+        "the project plus [asr,web,dev]",
     )
 
 
@@ -531,7 +608,7 @@ def install_packages(venv: Path | None = None) -> tuple[bool, str]:
         return False, "already installed"
 
     done = subprocess.run(
-        [str(executable), "-m", "pip", "install", "-q", "-e", ".[asr,dev]"],
+        [str(executable), "-m", "pip", "install", "-q", "-e", ".[asr,web,dev]"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -539,7 +616,7 @@ def install_packages(venv: Path | None = None) -> tuple[bool, str]:
     if done.returncode != 0:
         tail = "\n      ".join((done.stderr or "").strip().splitlines()[-6:])
         return False, f"pip failed:\n      {tail}"
-    return True, "installed the project and its asr and dev extras"
+    return True, "installed the project and its asr, web and dev extras"
 
 
 def download_model(
@@ -795,7 +872,9 @@ def main(argv: list[str] | None = None) -> int:
     if report.smoke == "fail":
         print("  Setup finished but the smoke test did not pass. See above.")
         return 1
-    print("  Ready. Try:  qa-web    or    qa-run <course_dir>")
+    print(f"  Ready. Start the interface:  {launcher('web')}")
+    print(f"  Or from a terminal:  {venv_python().parent / 'qa-web'}  "
+          f"or  {venv_python().parent / 'qa-run'} <course_dir>")
     return 0
 
 

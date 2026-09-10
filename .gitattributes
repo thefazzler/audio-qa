@@ -1,0 +1,7 @@
+# Launchers must arrive with the line endings their interpreter expects,
+# whatever core.autocrlf says on the machine that cloned them. A shell script
+# checked out with CRLF fails with "bad interpreter: No such file or directory",
+# which is not a message anyone new can act on.
+*.sh       text eol=lf
+*.command  text eol=lf
+*.cmd      text eol=crlf

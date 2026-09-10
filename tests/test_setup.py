@@ -32,9 +32,12 @@ from qa.setup import (
     check_tool,
     check_venv,
     cuda_pip_remediation,
+    _linux_family,
+    check_git,
     download_model,
     install_hint,
     install_packages,
+    launcher,
     main,
     render_fixes,
     render_table,
@@ -107,6 +110,53 @@ def test_remediation_is_written_for_the_platform_in_hand(monkeypatch, system, ne
     monkeypatch.setattr("qa.setup._system", lambda: system)
     assert needle in install_hint("ffmpeg")
     assert needle in install_hint("git")
+
+
+@pytest.mark.parametrize("family,needle", [
+    ("debian", "apt-get"), ("rhel", "dnf"), ("arch", "pacman"),
+])
+def test_linux_remediation_follows_the_distribution(monkeypatch, family, needle):
+    """A Fedora box must not be told to run apt-get."""
+    monkeypatch.setattr("qa.setup._system", lambda: "Linux")
+    monkeypatch.setattr("qa.setup._linux_family", lambda: family)
+    for tool in ("ffmpeg", "git", "python"):
+        assert needle in install_hint(tool), tool
+
+
+def test_the_linux_family_is_read_from_os_release(tmp_path, monkeypatch):
+    release = tmp_path / "os-release"
+    release.write_text('NAME=\"Rocky Linux\"\nID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n')
+    monkeypatch.setattr("qa.setup.Path", lambda p: release if p == "/etc/os-release" else Path(p))
+    assert _linux_family() == "rhel"
+    release.write_text('ID=ubuntu\nID_LIKE=debian\n')
+    assert _linux_family() == "debian"
+    release.unlink()
+    assert _linux_family() == "debian", "no file means the most common answer"
+
+
+def test_python_on_a_mac_has_a_route_that_needs_no_homebrew(monkeypatch):
+    monkeypatch.setattr("qa.setup._system", lambda: "Darwin")
+    hint = install_hint("python")
+    assert "brew install python@3.12" in hint
+    assert "python.org" in hint
+
+
+def test_git_is_reported_but_never_blocks(monkeypatch):
+    """Nothing in the pipeline runs git. A ZIP download must set up."""
+    monkeypatch.setattr("qa.setup.shutil.which", lambda name: None)
+    found = check_git()
+    assert found.status == MISSING
+    assert found.optional
+    assert not found.blocking
+    assert found.fix, "still say how to get it, for the first update"
+
+
+@pytest.mark.parametrize("system,expected", [
+    ("Windows", "double-click qa-web.cmd"), ("Darwin", "./qa-web.sh"), ("Linux", "./qa-web.sh"),
+])
+def test_the_finish_line_names_the_launcher_for_this_platform(monkeypatch, system, expected):
+    monkeypatch.setattr("qa.setup._system", lambda: system)
+    assert launcher("web") == expected
 
 
 def test_an_unknown_platform_still_gets_somewhere_to_go(monkeypatch):

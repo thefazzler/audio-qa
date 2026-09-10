@@ -4,17 +4,22 @@ For whoever picks this up next. Written so that if the person who built it is
 unavailable, you can run a course end to end, understand why it is built the
 way it is, and know what is unfinished.
 
-**Step one on a new machine: double-click `qa-setup.cmd`, then `qa-web.cmd`.**
-On anything other than Windows, or from a terminal, that is `python -m qa.setup`
-then `qa-web`. Setup checks every prerequisite, tells you the exact command for
-anything missing, installs the things that are safe to install, and finishes by
-running the whole pipeline on a generated fixture to prove it works.
-`qa-setup --check` is also the troubleshooting tool later, when something breaks
-after a Python or driver upgrade. See D22.
+**Step one on a new machine: the START HERE block at the top of `README.md`.**
+It is three steps per platform: install Python, ffmpeg and git with the
+commands given there, get the folder, then run setup and open the interface.
+On Windows that is double-click `qa-setup.cmd`, then `qa-web.cmd`. On macOS
+and Linux it is `./qa-setup.sh`, then `./qa-web.sh`, and the two `.command`
+files are the same programs for double-clicking in Finder. Setup checks every
+prerequisite, tells you the exact command for anything missing, installs the
+things that are safe to install, and finishes by running the whole pipeline on
+a generated fixture to prove it works. `qa-setup.cmd --check` or
+`./qa-setup.sh --check` is also the troubleshooting tool later, when something
+breaks after a Python or driver upgrade. See D22 and D33.
 
-The two `.cmd` files exist because "activate the virtual environment, then type
+The launchers exist because "activate the virtual environment, then type
 qa-web" is where the instructions lost people, and nobody reviewing narration
-should have to learn what a virtual environment is.
+should have to learn what a virtual environment is. They also cover the one
+thing setup cannot: a machine with no Python at all.
 
 Read this first, then `README.md` for how to install and run, then
 `DECISIONS.md` when you want to know why something is the way it is. Do not

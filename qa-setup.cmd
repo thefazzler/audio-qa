@@ -12,16 +12,19 @@ rem something breaks after a Python or driver upgrade.
 setlocal
 cd /d "%~dp0"
 
-rem The project's own environment when it exists, otherwise whatever Python is
-rem on the path, because the first job of setup is to create that environment.
-set "PY=.venv\Scripts\python.exe"
-if not exist "%PY%" set "PY=py -3.12"
-if not exist ".venv\Scripts\python.exe" (
-  where py >nul 2>&1 || set "PY=python"
-)
+rem The project's own environment when it exists, otherwise a Python that can
+rem run the setup module, because the first job of setup is to create that
+rem environment. Each candidate is actually run: on Windows 11 a bare "python"
+rem with nothing installed is a Microsoft Store stub that only looks present.
+set "PY="
+if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
+if not defined PY py -3.12 -c "import sys" >nul 2>&1 && set "PY=py -3.12"
+if not defined PY py -3 -c "import sys" >nul 2>&1 && set "PY=py -3"
+if not defined PY python -c "import sys" >nul 2>&1 && set "PY=python"
+if not defined PY goto nopython
 
 echo.
-"%PY%" -m qa.setup %*
+%PY% -m qa.setup %*
 set "CODE=%ERRORLEVEL%"
 
 echo.
@@ -35,3 +38,27 @@ echo.
 pause
 endlocal
 exit /b %CODE%
+
+:nopython
+rem Setup is written in Python, so this is the one prerequisite it cannot
+rem report on its own. Say exactly what to do, the same way it would have.
+echo.
+echo   PREREQUISITE  STATUS   FOUND
+echo   ------------------------------------------------------------
+echo   Python        MISSING  no Python on this machine
+echo.
+echo   What to do:
+echo.
+echo   Python: MISSING
+echo     required: 3.11 or newer, below 3.14
+echo     fix:      open a terminal ^(Start, type "terminal"^) and run
+echo.
+echo                 winget install --id Python.Python.3.12 -e
+echo.
+echo     then close that terminal, and double-click this file again.
+echo     Without winget, use the installer at https://python.org/downloads
+echo     and tick "Add python.exe to PATH".
+echo.
+pause
+endlocal
+exit /b 1
