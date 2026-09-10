@@ -38,7 +38,13 @@ APP = Path(__file__).with_name("app.py")
 #                        avoid: everything runs on this machine and the audio
 #                        never leaves it.
 #   gatherUsageStats     off, for the same reason.
+#   address localhost    Streamlit's default binds every network interface, so
+#                        without this a colleague on the office network could
+#                        open the interface, browse the library, start runs and
+#                        delete courses. There is no login. "Everything runs on
+#                        this machine" has to include who can reach it.
 STREAMLIT_QUIET = (
+    "--server.address", "localhost",
     "--server.showEmailPrompt", "false",
     "--logger.hideWelcomeMessage", "true",
     "--client.toolbarMode", "minimal",

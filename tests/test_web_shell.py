@@ -47,6 +47,13 @@ def test_the_flags_cover_what_the_pilot_session_found():
     assert flags["--browser.gatherUsageStats"] == "false"
 
 
+def test_the_server_is_reachable_only_from_this_machine():
+    """Streamlit's default binds every interface, and there is no login.
+    "Everything runs on this machine" includes who can reach it."""
+    flags = dict(zip(STREAMLIT_QUIET[::2], STREAMLIT_QUIET[1::2]))
+    assert flags["--server.address"] in {"localhost", "127.0.0.1"}
+
+
 def test_every_flag_has_a_value():
     assert len(STREAMLIT_QUIET) % 2 == 0
     assert all(f.startswith("--") for f in STREAMLIT_QUIET[::2])
