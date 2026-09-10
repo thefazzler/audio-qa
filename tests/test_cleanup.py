@@ -26,6 +26,7 @@ from qa.cleanup import (
     CleanupError,
     archive_packets,
     delete_packets,
+    is_packet,
     human,
     library_survey,
     packet_space,
@@ -348,6 +349,44 @@ def packets(tmp_path: Path, count: int = 3) -> Path:
             "{}", encoding="utf-8"
         )
     return directory
+
+
+def test_only_files_this_tool_wrote_are_offered_from_the_packet_folder(tmp_path):
+    """The packet folder is whatever a human typed, Documents included. A
+    survey that listed every .md and .json there would put files this tool
+    never wrote in front of a Delete button. See D35."""
+    directory = packets(tmp_path)
+    (directory / "README.md").write_text("mine", encoding="utf-8")
+    (directory / "notes.json").write_text("{}", encoding="utf-8")
+    (directory / "budget.zip").write_bytes(b"PK")
+    space = packet_space(directory)
+    assert len(space.markdown) == 3
+    assert len(space.payloads) == 3
+    assert space.archives == ()
+    listed = {p.name for p in space.markdown + space.payloads}
+    assert "README.md" not in listed and "notes.json" not in listed
+
+
+def test_the_packet_name_grammar_matches_what_packet_stem_writes():
+    assert is_packet(Path("it_spisccc26_10_enus_2026-08-27_1624_cpu-int8.md"))
+    assert is_packet(Path("it_spisccc26_10_enus_2026-08-27_1624_gpu-float16.json"))
+    assert is_packet(Path("it_spisccc26_10_enus_2026-08-27_1624_cpu-int8_2.md"))
+    assert not is_packet(Path("README.md"))
+    assert not is_packet(Path("settings.json"))
+    assert not is_packet(Path("it_spisccc26_10_enus_2026-08-27_1624_cpu-int8.txt"))
+
+
+def test_deleting_a_file_that_is_not_a_packet_is_refused_even_inside_the_folder(tmp_path):
+    directory = packets(tmp_path)
+    stray = directory / "README.md"
+    stray.write_text("mine", encoding="utf-8")
+    with pytest.raises(CleanupError, match="not a packet this tool wrote"):
+        delete_packets([stray], directory)
+    assert stray.exists()
+    with pytest.raises(CleanupError, match="not a packet this tool wrote"):
+        archive_packets(directory, paths=[stray], delete=True)
+    assert stray.exists()
+    assert not list(directory.glob("*.zip")), "no archive is written for a refusal"
 
 
 def test_a_packet_folder_reports_what_is_in_it(tmp_path):

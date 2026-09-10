@@ -43,6 +43,7 @@ in progress is refused. See DECISIONS.md D31.
 from __future__ import annotations
 
 import json
+import re
 import time
 import zipfile
 from dataclasses import dataclass, field
@@ -63,6 +64,31 @@ SCRIPT_SUFFIXES = (".pptx", ".docx", ".doc", ".txt", ".rtf")
 
 SCRATCH_KEY = "scratch"
 MEDIA_KEY = "media"
+
+# What this tool writes into the packet folder, and therefore the only things
+# the Storage tab may offer to archive or delete from it. The folder is chosen
+# by a human and can be anything, including Documents; a survey that globbed
+# every .md and .json there would list files this tool never wrote, and the
+# delete path only checks that a file is inside the folder. See D35.
+#
+# A packet stem is <course_code>_<YYYY-MM-DD>_<HHMM>_<device>-<compute>, with
+# an optional _<n> when two runs share a minute; see packet.packet_stem. An
+# archive is packets_<YYYY-MM-DD>.zip with the same optional suffix.
+PACKET_NAME = re.compile(
+    r"^[a-z0-9]+(?:_[a-z0-9]+)*_\d{4}-\d{2}-\d{2}_\d{4}_(?:cpu|gpu)-[a-z0-9_]+"
+    r"(?:_\d+)?\.(?:md|json)$",
+    re.IGNORECASE,
+)
+ARCHIVE_NAME = re.compile(r"^packets_\d{4}-\d{2}-\d{2}(?:_\d+)?\.zip$", re.IGNORECASE)
+
+
+def is_packet(path: Path) -> bool:
+    """Whether a file is named the way this tool names packets."""
+    return bool(PACKET_NAME.match(Path(path).name))
+
+
+def is_archive(path: Path) -> bool:
+    return bool(ARCHIVE_NAME.match(Path(path).name))
 
 
 class CleanupError(QAError):
@@ -371,9 +397,9 @@ def packet_space(output_dir: Path | None = None) -> PacketSpace:
     directory = Path(output_dir) if output_dir else output_root()
     if not directory.is_dir():
         return PacketSpace(directory=directory)
-    markdown = sorted(directory.glob("*.md"))
-    payloads = sorted(directory.glob("*.json"))
-    archives = sorted(directory.glob("*.zip"))
+    markdown = sorted(p for p in directory.glob("*.md") if is_packet(p))
+    payloads = sorted(p for p in directory.glob("*.json") if is_packet(p))
+    archives = sorted(p for p in directory.glob("*.zip") if is_archive(p))
     return PacketSpace(
         directory=directory,
         markdown=tuple(markdown),
@@ -421,6 +447,10 @@ def archive_packets(
             raise CleanupError(
                 f"{path} is not in the packet folder. Refusing to archive it."
             )
+        if not is_packet(path):
+            raise CleanupError(
+                f"{path.name} is not a packet this tool wrote. Refusing to archive it."
+            )
 
     directory.mkdir(parents=True, exist_ok=True)
     archive = _unused(directory / f"packets_{time.strftime('%Y-%m-%d')}.zip")
@@ -464,6 +494,10 @@ def delete_packets(paths: list[Path], output_dir: Path | None = None) -> Archive
         if not _inside(path, directory):
             raise CleanupError(
                 f"{path} is not in the packet folder. Refusing to delete it."
+            )
+        if not is_packet(path):
+            raise CleanupError(
+                f"{path.name} is not a packet this tool wrote. Refusing to delete it."
             )
         try:
             path.unlink()

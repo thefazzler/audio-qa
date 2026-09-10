@@ -1530,3 +1530,23 @@ A test scans every tracked text file for a URL of the form
 means here: not a token that gets substituted, but the absence of the value,
 enforced. When the day comes that a real link is wanted somewhere, add it as
 the one exception in that test, with the reason.
+
+## D35. The Storage tab may only offer what this tool wrote
+
+From the scoped security review. The packet folder survey globbed every
+`.md`, `.json` and `.zip` in the packet folder. The folder is whatever a
+human typed into the sidebar, and Documents is a plausible thing to type. On
+that folder the Storage tab would have listed every Markdown and JSON file a
+person owns under "packets" and put them in front of Delete permanently, and
+the delete path checked only that a file was inside the folder.
+
+Packets have a grammar, `packet_stem` writes it, and now `cleanup` reads it:
+the survey lists only names that match, and both archive and delete refuse a
+name that does not, whether or not it is inside the folder. The refusal is
+belt and braces, since the UI only ever passes what the survey listed; it is
+there for the next caller. A file this tool did not write is not this tool's
+to remove.
+
+The other finding from the same review, the interface listening on every
+network interface, is fixed in `launch.py` and needs no decision: there is no
+login, so there was never a version of this where a LAN address was right.
