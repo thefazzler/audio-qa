@@ -23,11 +23,12 @@ Nobody, anywhere, needs to know what a virtual environment is.
 
 2. **Get this folder.** Either
 
-       git clone https://github.com/thefazzler/audio-qa.git
+       git clone <repository-url>
 
-   or, without git, open https://github.com/thefazzler/audio-qa in a browser,
-   choose **Code**, then **Download ZIP**, and unzip it somewhere you will
-   find again.
+   or, without git, open the repository's GitHub page in a browser, choose
+   **Code**, then **Download ZIP**, and unzip it somewhere you will find
+   again. `<repository-url>` is the address under that same **Code** button;
+   whoever pointed you at this tool has it.
 
 3. **Double-click `qa-setup.cmd`.** When it says Ready, **double-click
    `qa-web.cmd`.** The interface opens in your browser.
@@ -43,9 +44,10 @@ Nobody, anywhere, needs to know what a virtual environment is.
    The version is pinned on purpose. A bare `brew install python` gives
    3.14, which the ASR runtime cannot use yet; see Requirements below.
 
-2. **Get this folder.**
+2. **Get this folder.** `<repository-url>` is the address under the green
+   **Code** button on the repository's GitHub page.
 
-       git clone https://github.com/thefazzler/audio-qa.git
+       git clone <repository-url>
        cd audio-qa
 
 3. **Run setup, then open the interface.**
@@ -73,9 +75,10 @@ Nobody, anywhere, needs to know what a virtual environment is.
    `sudo add-apt-repository ppa:deadsnakes/ppa` first. Debian 12 ships 3.11,
    which is fine: install `python3 python3-venv` instead.
 
-2. **Get this folder.**
+2. **Get this folder.** `<repository-url>` is the address under the green
+   **Code** button on the repository's GitHub page.
 
-       git clone https://github.com/thefazzler/audio-qa.git
+       git clone <repository-url>
        cd audio-qa
 
 3. **Run setup, then open the interface.**

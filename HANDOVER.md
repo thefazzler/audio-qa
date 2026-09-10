@@ -316,8 +316,10 @@ D23 is the counterexample that keeps "almost" in that sentence.
 spreadsheet, the ACIS counterparts who receive findings, whoever owns the
 storyboard source on SharePoint, and who to escalate a SHOWSTOPPER to.
 
-Repository: https://github.com/thefazzler/audio-qa. It is public but
-proprietary; see `LICENSE`. No course material is in it, in the working tree or
+Repository: wherever your clone's `git remote -v` points. Nothing in the
+tree names a home for it, on purpose, so it can move between accounts and
+organisations without an edit; a test enforces that. It is proprietary
+whether or not it is readable publicly; see `LICENSE`. No course material is in it, in the working tree or
 in its history, and it must stay that way. `DECISIONS.md` D16 describes how the
 test fixtures avoid quoting narration, and the corpus scan that should be
 re-run before any future publication.

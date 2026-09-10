@@ -1511,3 +1511,22 @@ probe imports streamlit.
 **git blocked setup and nothing runs git.** It is how the repository arrives
 and updates, and that is all. The row stays, with the fix, marked optional,
 so a ZIP download is not stopped at setup for a tool the pipeline never calls.
+
+## D34. The repository has no hard-wired home
+
+The repository is moving from a personal account to the company's, and it
+may move again. Nothing in the pipeline reads its own URL, so the only
+places that named it were five lines of prose: four clone commands in the
+README and one line in the handover.
+
+The clone commands now read `git clone <repository-url>`, with one sentence
+saying where the address is: under the green Code button on the repository's
+own GitHub page, which is where the reader already is. A literal URL there
+would be convenient for exactly as long as it stayed true, and a wrong clone
+command in the first screen of the README is worse than a placeholder.
+
+A test scans every tracked text file for a URL of the form
+`github.com/<owner>/audio-qa` and fails on any. That is what "agnostic"
+means here: not a token that gets substituted, but the absence of the value,
+enforced. When the day comes that a real link is wanted somewhere, add it as
+the one exception in that test, with the reason.
