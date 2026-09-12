@@ -27,7 +27,7 @@ from qa.jobs import (
 )
 from qa.library import list_courses, resolve_library
 from qa.util import QAError
-from qa.web.helptext import concept, tooltip
+from qa.web.helptext import column, concept, tooltip
 
 REFRESH_S = 2
 
@@ -232,7 +232,26 @@ def _topics(status) -> None:
                 "listen": str(topic.listen_items) if topic.listen_items else "",
             }
         )
-    st.dataframe(rows, width="stretch", hide_index=True)
+    st.dataframe(
+        rows,
+        width="stretch",
+        hide_index=True,
+        # One mark per header, none in the cells. A new reviewer's first
+        # question at this table is "what is coverage", and the answer has to
+        # be where the word is.
+        column_config={
+            "topic": st.column_config.TextColumn("topic", help=column("topics_topic")),
+            "state": st.column_config.TextColumn("state", help=column("topics_state")),
+            "audio": st.column_config.TextColumn("audio", help=column("topics_audio")),
+            "coverage": st.column_config.TextColumn(
+                "coverage", help=column("topics_coverage")
+            ),
+            "differences": st.column_config.TextColumn(
+                "differences", help=column("topics_differences")
+            ),
+            "listen": st.column_config.TextColumn("listen", help=column("topics_listen")),
+        },
+    )
     if status.state == RUNNING:
         st.caption(
             "Results appear per topic as each one finishes, so early topics can "

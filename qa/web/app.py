@@ -57,6 +57,9 @@ def _init_state() -> None:
     st.session_state.setdefault("removed", None)
     st.session_state.setdefault("watching", None)
     st.session_state.setdefault("started_here", None)
+    from qa.web import prefs
+
+    prefs.init(st.session_state)
 
 
 @st.cache_data(show_spinner=False)
@@ -145,6 +148,12 @@ def _sidebar() -> None:
         else:
             st.sidebar.write(f"~~{device.label}~~ unavailable")
             st.sidebar.caption(device.reason)
+
+    # Drawn before any tab, so a click on the help checkbox changes the same
+    # rerun that draws the tabs rather than the one after it.
+    from qa.web import prefs
+
+    prefs.sidebar(st.session_state)
 
 
 # ---------------------------------------------------------------------------

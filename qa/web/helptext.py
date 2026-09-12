@@ -5,21 +5,29 @@ tour and a "learn more" pointer into the Docs tab all read from this module,
 so the voice cannot drift between them and the whole layer is reviewable on
 one screen. Pruning it is a single edit to a single file; that is the point.
 
-**Two budgets, because there are two kinds of reading.** `TOOLTIPS` and the
-tour are what somebody reads *while working*: a form field, a results column,
-a walkthrough on the first launch. They are capped at `BUDGET_FIELDS`.
-`CONCEPTS` is what somebody reads *while learning*: what a stage does, what a
-metric means, what a panel is for. They are capped at `BUDGET_CONCEPTS`.
+**Three budgets, because there are three kinds of reading.** `TOOLTIPS` and
+the tour are what somebody reads *while working*: a form field, a walkthrough
+on the first launch. They are capped at `BUDGET_FIELDS`. `CONCEPTS` is what
+somebody reads *while learning*: what a stage does, what a metric means, what
+a panel is for. They are capped at `BUDGET_CONCEPTS`. `COLUMNS` is what
+somebody reads *while reading a table*: what one column of the topics, listen
+list or checks table means. They are capped at `BUDGET_COLUMNS`.
 
 A test holds each. When a draft goes over, cut until it fits rather than
 raising the number: terse and read beats thorough and skipped. The budgets
-went from one to two because the layer grew a second surface, not because a
-draft ran long. See DECISIONS.md D30 and D31.
+went from one to two, and then to three, because the layer grew a surface
+each time, not because a draft ran long. See DECISIONS.md D30, D31 and D36.
+
+Every accessor answers None when contextual help is switched off in the
+sidebar (qa/web/prefs.py), which is how one checkbox removes every question
+mark at once. The words are still here and the key is still checked, so a
+misspelt key fails the same way with help off as with it on.
 
 What a tooltip says: what to enter and what getting it wrong costs, not a
 definition. A field whose label already says everything gets none, and no
 tooltip goes inside a results table cell — if a result needs explaining it is
-explained once, in the column header.
+explained once, in the column header. What a column says: how to read the
+value, and what the value does not mean.
 
 A `Link` points at a real heading in a real document, and a test resolves every
 one of them. Link only where the section adds something the tooltip did not; a
@@ -38,6 +46,7 @@ from pathlib import Path
 # One page each. Not targets to grow into.
 BUDGET_FIELDS = 500
 BUDGET_CONCEPTS = 500
+BUDGET_COLUMNS = 500
 
 # The name D30 used, kept pointing at the budget D30 was written about.
 BUDGET = BUDGET_FIELDS
@@ -61,11 +70,14 @@ class Doc:
 # what this is for, then how to run it, then why it is the way it is.
 # DECISIONS.md is here because it is where the pronunciation layer's levels are
 # written down (D15) and because HANDOVER.md sends every successor to it.
+# GLOSSARY.md is last because it is not read in order: it is where a hover
+# mark sends somebody who wants the longer answer to "what does this word mean".
 DOCS: tuple[Doc, ...] = (
     Doc("HANDOVER.md", ROOT / "HANDOVER.md"),
     Doc("README.md", ROOT / "README.md"),
     Doc("COMMANDS.md", ROOT / "COMMANDS.md"),
     Doc("DECISIONS.md", ROOT / "DECISIONS.md"),
+    Doc("GLOSSARY.md", ROOT / "GLOSSARY.md"),
 )
 
 DOC_KEYS = tuple(d.key for d in DOCS)
@@ -94,6 +106,18 @@ class Tip:
 
     def render(self) -> str:
         return f"{self.text} {self.link.render()}" if self.link else self.text
+
+
+def _shown(tip: Tip) -> str | None:
+    """The text, or None when this tab has turned contextual help off.
+
+    Streamlit draws no mark for help=None, so one checkbox in the sidebar
+    removes every question mark in the app. Looked up after the key, so an
+    unknown key is still a KeyError whether help is on or off.
+    """
+    from qa.web import prefs
+
+    return tip.render() if prefs.help_enabled() else None
 
 
 # ---------------------------------------------------------------------------
@@ -148,12 +172,6 @@ TOOLTIPS: dict[str, Tip] = {
         "watched terms and unscripted topics. Nothing downstream settles these; "
         "a person with headphones does."
     ),
-    "watchlist_column": Tip(
-        "MISHEARD means the ASR wrote something other than the expected "
-        "spelling here. It is a reason to listen, not a defect, and a MATCH is "
-        "orthography, not proof of correct pronunciation.",
-        Link("README.md", "Pronunciation watchlist"),
-    ),
     "stats_panel": Tip(
         "What this run measured about itself and this machine: engine, device, "
         "decode speed, quality signals and the course's audio conventions. "
@@ -162,9 +180,9 @@ TOOLTIPS: dict[str, Tip] = {
 }
 
 
-def tooltip(key: str) -> str:
+def tooltip(key: str) -> str | None:
     """The rendered hover text for a field. Raises on an unknown key."""
-    return TOOLTIPS[key].render()
+    return _shown(TOOLTIPS[key])
 
 
 # ---------------------------------------------------------------------------
@@ -263,9 +281,124 @@ CONCEPTS: dict[str, Tip] = {
 }
 
 
-def concept(key: str) -> str:
+def concept(key: str) -> str | None:
     """The rendered hover text for a panel, metric or stage row."""
-    return CONCEPTS[key].render()
+    return _shown(CONCEPTS[key])
+
+
+# ---------------------------------------------------------------------------
+# Columns: how to read one column of a table, and what it does not mean
+# ---------------------------------------------------------------------------
+# Three tables carry these: the topics table on Runs, and the listen list and
+# checks table on Results. A key is table name, then column name. Every column
+# gets one, including the ones whose label seems to say everything, because
+# the reader who needs to be told what "topic" means is the reader this layer
+# exists for. The mark hangs on the header, never in a cell, as D30 says.
+
+COLUMNS: dict[str, Tip] = {
+    # Runs: topics decoded
+    "topics_topic": Tip(
+        "The topic number from the delivered filename. Rows fill in as each "
+        "topic finishes."
+    ),
+    "topics_state": Tip(
+        "pending is waiting, transcribed was decoded this run, cached was "
+        "reused from an earlier run, aligned is compared against the script."
+    ),
+    "topics_audio": Tip(
+        "Length of this topic's narration. Decode time scales with it."
+    ),
+    "topics_coverage": Tip(
+        "Share of the script's words the transcript matched. Below 97% the "
+        "checks stage flags it."
+    ),
+    "topics_differences": Tip(
+        "Places script and transcript disagree, word by word: a measurement, "
+        "not a verdict. Outline only means no word-level check was possible."
+    ),
+    "topics_listen": Tip(
+        "Places in this topic that need a person with headphones, listed on "
+        "the Results tab."
+    ),
+    # Results: listen list
+    "listen_topic": Tip("Which topic file to open. Sorted by topic, then time."),
+    "listen_at": Tip(
+        "Minutes and seconds into the file, from the transcriber's word "
+        "timings, so the audio can be scrubbed straight there."
+    ),
+    "listen_found_by": Tip(
+        "Which detector raised it: alignment, the pronunciation watchlist, a "
+        "voiced symbol, an unverifiable duplication, or a topic with no "
+        "verbatim script. ++ means two independent detectors agreed here; "
+        "listen there first."
+    ),
+    "listen_what": Tip(
+        "What the script says beside what the voice said. (nothing) on one "
+        "side means a word was added or dropped."
+    ),
+    "listen_confidence": Tip(
+        "The transcriber's certainty about what it heard here, 0 to 1, from "
+        "its least certain word at the site. Below 0.6 it may have misheard, "
+        "so the difference may be its mistake rather than the narrator's; "
+        "near 1 the words really do differ. It measures the decode, never "
+        "the pronunciation.",
+        Link("GLOSSARY.md", "Confidence"),
+    ),
+    "listen_why": Tip(
+        "The detector's reason. MISHEARD means the ASR wrote something other "
+        "than the expected spelling: a reason to listen, not a defect. A "
+        "MATCH is orthography, not proof of correct pronunciation.",
+        Link("README.md", "Pronunciation watchlist"),
+    ),
+    # Results: checks
+    "checks_topic": Tip("One row per topic, in delivery order."),
+    "checks_from": Tip(
+        "Where in the script document this topic came from: slides for a "
+        "storyboard, a block heading for a Word script, a filename for its "
+        "own document."
+    ),
+    "checks_script": Tip(
+        "What Intake recorded: verbatim is word-for-word narration, outline "
+        "is notes only, none is no script, freeform is a document of its own. "
+        "Only verbatim topics are checked word by word."
+    ),
+    "checks_state": Tip(
+        "Measured, not a verdict. ok is no differences, review is differences "
+        "found, listen is listen items only, flag is a check flag, outline "
+        "and no script could not be aligned."
+    ),
+    "checks_coverage": Tip(
+        "Share of script words the transcript matched. Below 97% is LOW "
+        "COVERAGE; below 85% a slide mapping error is likelier. n/a without "
+        "a verbatim script."
+    ),
+    "checks_differences": Tip(
+        "Word-level disagreements, counted: measurements, not defects. not "
+        "aligned means there was no verbatim script to compare against."
+    ),
+    "checks_listen": Tip("Places in this topic on the listen list above."),
+    "checks_flags": Tip(
+        "Problems the checks stage raised: pace far from the script's, low "
+        "coverage, a probable mapping error, an unmatched last sentence, long "
+        "trailing silence, a decoder that stopped early, an audio artifact. "
+        "Read the flag first; a mapping error makes the differences noise."
+    ),
+    "checks_audio": Tip(
+        "What the artifacts stage heard: clipping, silence inside the "
+        "narration, a silent file, an abrupt end. Pauses matching this "
+        "course's own conventions are not listed."
+    ),
+    "checks_suppressed": Tip(
+        "Segment boundary duplications the transcriber produced and the "
+        "pipeline removed as engine artifacts. Not narration, not counted as "
+        "differences."
+    ),
+}
+
+
+def column(key: str) -> str | None:
+    """The rendered hover text for a table column header."""
+    return _shown(COLUMNS[key])
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +500,11 @@ def concept_words() -> int:
     return sum(_words(tip.render()) for tip in CONCEPTS.values())
 
 
+def column_words() -> int:
+    """What a reader reads while reading a table: one column at a time."""
+    return sum(_words(tip.render()) for tip in COLUMNS.values())
+
+
 # The name D30 used. It counted one budget because there was one.
 word_count = field_words
 
@@ -375,5 +513,6 @@ def links() -> tuple[Link, ...]:
     """Every learn-more link, for the test that resolves them."""
     found = [tip.link for tip in TOOLTIPS.values() if tip.link]
     found += [tip.link for tip in CONCEPTS.values() if tip.link]
+    found += [tip.link for tip in COLUMNS.values() if tip.link]
     found += [step.link for step in TOUR if step.link]
     return tuple(found)

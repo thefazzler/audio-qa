@@ -100,22 +100,36 @@ cadence. Long pauses are covered by the audio stage; nothing else is.
 The judgment prompt requires every report to say this. Do not remove that
 requirement.
 
-## New-user onboarding is the tour and the Docs tab
+## New-user onboarding is the tour, the hover marks, the glossary and the Docs tab
 
-Nobody has to stand next to a new person for their first course. `qa-web`
+Nobody has to stand next to a new person for their first course, and nobody
+reads the docs first: the help has to be where the question is. `qa-web`
 offers a six-step tour on its first launch on a machine, reachable forever
-after from the "Tour" link at the foot of the sidebar, and its Docs tab renders
-this file, `README.md`, `COMMANDS.md` and `DECISIONS.md` read-only, so the
-words a new person needs are inside the app rather than in a folder they have
-to be told about. Fields that can be got wrong expensively carry a hover
-tooltip.
+after from the "Tour" link at the foot of the sidebar. Fields that can be got
+wrong expensively carry a hover tooltip, and so does **every column header of
+every table**: the topics table on Runs, and the listen list and checks table
+on Results. The confidence column of the listen list is the one a new
+reviewer most needs explained, and its mark says whose certainty it is, where
+the floor is, and that it never measures pronunciation. The Docs tab renders
+this file, `README.md`, `COMMANDS.md`, `DECISIONS.md` and `GLOSSARY.md`
+read-only, so the words a new person needs are inside the app rather than in
+a folder they have to be told about. The glossary is the third way to learn a
+word, after the mark and the tour, and it is where a mark points when the
+short answer is not enough.
 
-**Every word of it lives in `qa/web/helptext.py`**, tooltips, tour and panel
-explanations alike, as dicts of key to text. That is where you edit the help,
-and the only place. Two budgets, 500 words each, both held by tests: what you
-read while working (fields, columns, the tour) and what you read while learning
-(what a stage does, what a metric means). If a draft goes over, cut it; do not
-raise the number. See **D30** and **D31**.
+The question marks can be turned off. **Settings**, at the foot of the
+sidebar, has a "Contextual help" checkbox that removes every one of them at
+once; it is on again at the next launch, on purpose, because the person who
+turned it off yesterday knew the interface and the person opening the app
+today may not.
+
+**Every word of it lives in `qa/web/helptext.py`**, tooltips, column texts,
+tour and panel explanations alike, as dicts of key to text. That is where you
+edit the help, and the only place. Three budgets, 500 words each, all held by
+tests: what you read while working (fields and the tour), what you read while
+learning (what a stage does, what a metric means), and what you read at a
+table (one column at a time). If a draft goes over, cut it; do not raise the
+number. See **D30**, **D31** and **D36**.
 
 The Docs tab reads documents and never writes one, which is also a rule rather
 than an omission: git stays the only way any of this content changes.

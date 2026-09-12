@@ -29,7 +29,7 @@ from qa.results import (
 )
 from qa.device import DEVICE_NOTE, probe
 from qa.util import QAError
-from qa.web.helptext import concept, tooltip
+from qa.web.helptext import column, concept, tooltip
 
 
 @st.cache_data(show_spinner=False)
@@ -119,10 +119,24 @@ def _checks_table(results) -> None:
         ],
         width="stretch",
         hide_index=True,
-    )
-    st.caption(
-        "Suppressed counts ASR segment boundary duplications removed as engine "
-        "artifacts. They are not narration."
+        column_config={
+            "topic": st.column_config.TextColumn("topic", help=column("checks_topic")),
+            "from": st.column_config.TextColumn("from", help=column("checks_from")),
+            "script": st.column_config.TextColumn("script", help=column("checks_script")),
+            "state": st.column_config.TextColumn("state", help=column("checks_state")),
+            "coverage": st.column_config.TextColumn(
+                "coverage", help=column("checks_coverage")
+            ),
+            "differences": st.column_config.TextColumn(
+                "differences", help=column("checks_differences")
+            ),
+            "listen": st.column_config.TextColumn("listen", help=column("checks_listen")),
+            "flags": st.column_config.TextColumn("flags", help=column("checks_flags")),
+            "audio": st.column_config.TextColumn("audio", help=column("checks_audio")),
+            "suppressed": st.column_config.TextColumn(
+                "suppressed", help=column("checks_suppressed")
+            ),
+        },
     )
 
 
@@ -164,12 +178,21 @@ def _listen_list(results) -> None:
         ],
         width="stretch",
         hide_index=True,
+        # MATCH, LOW CONFIDENCE and MISHEARD are written into the why column.
+        # Explained once, on the header, rather than in every cell that
+        # carries one. The confidence column matters most: it is the reason
+        # most of these rows exist, and nothing on screen said so.
         column_config={
-            # MATCH, LOW CONFIDENCE and MISHEARD are written into this column.
-            # Explained once here rather than in every cell that carries one.
-            "why": st.column_config.TextColumn(
-                "why", help=tooltip("watchlist_column")
-            )
+            "topic": st.column_config.TextColumn("topic", help=column("listen_topic")),
+            "at": st.column_config.TextColumn("at", help=column("listen_at")),
+            "found by": st.column_config.TextColumn(
+                "found by", help=column("listen_found_by")
+            ),
+            "what": st.column_config.TextColumn("what", help=column("listen_what")),
+            "confidence": st.column_config.TextColumn(
+                "confidence", help=column("listen_confidence")
+            ),
+            "why": st.column_config.TextColumn("why", help=column("listen_why")),
         },
     )
 
@@ -273,8 +296,10 @@ def _stats(results) -> None:
     The heading carries the panel's one help mark, above the expander rather
     than inside it, so the question can be answered without opening it.
     """
+    from qa.web import prefs
+
     st.subheader("Stats for nerds", help=tooltip("stats_panel"))
-    with st.expander("Show the numbers"):
+    with st.expander("Show the numbers", expanded=prefs.stats_open(st.session_state)):
         stats = results.stats
         st.caption(
             "Everything here was recorded by the pipeline or measured about "

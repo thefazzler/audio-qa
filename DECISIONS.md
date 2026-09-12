@@ -1550,3 +1550,64 @@ to remove.
 The other finding from the same review, the interface listening on every
 network interface, is fixed in `launch.py` and needs no decision: there is no
 login, so there was never a version of this where a LAN address was right.
+
+## D36. Every column explains itself, a third budget, a glossary, and a switch
+
+Asked for, with the reason given plainly: many people will use this and most
+will not read the docs, so the training has to be where the question is. Four
+things, recorded together because they are one answer.
+
+**Every column header of every table carries a mark.** The topics table on
+Runs, the listen list and the checks table on Results: twenty-two columns,
+twenty-two texts. That includes columns whose label seems to say everything,
+"topic" among them, which D30 would have left bare. The reader who needs
+"topic" explained is exactly the reader this layer exists for, and a table
+where some headers have a mark and some do not teaches people that the marks
+are arbitrary. What a column text says is how to read the value and what the
+value does not mean; the mark still hangs on the header and never in a cell.
+
+**The confidence column is the one that mattered.** It was the least
+explained number on the page and the reason most listen items exist. Its
+text says whose certainty it is (the transcriber's, about its own hearing),
+where the floor is (0.6, `LOW_CONFIDENCE` in `align.py`, and a test holds
+the two equal), what a low value means for the difference beside it (the
+transcriber may be wrong rather than the narrator), what a high value means
+(the words really do differ), and what it never measures (pronunciation).
+The watchlist wording that used to live on the "why" column moved into the
+same dict, so the listen list is explained by one accessor rather than two.
+
+**A third budget, by the D31 rule.** The two existing budgets stood at 497
+and 482 of 500, and twenty-two column texts do not fit in six words. D31's
+rule is that the budget splits rather than grows when the layer gains a
+surface, so `BUDGET_COLUMNS` is 500, one page, held by the same kind of test
+with the same instruction: cut, do not raise. The first draft came in at 571
+and was cut twice, to 507 and then 495. The three dicts are disjoint by test,
+so no word can be counted in the roomiest budget.
+
+**`GLOSSARY.md`, in the Docs tab.** The third way to learn a word, after the
+mark and the tour: alphabetical, one heading per term, rendered read-only
+like the rest. The confidence entry is the long form of the column text, with
+a "Why it matters" paragraph, because a hover is the wrong place for a
+paragraph and the glossary is the right one; the column's mark links to it.
+Tests hold the file alphabetical, hold every word the column help leans on
+to an entry, and resolve the link like every other learn-more pointer.
+
+**A switch, in a Settings section at the foot of the sidebar.** One checkbox,
+"Contextual help", makes every accessor answer None, which Streamlit draws as
+no mark, so the whole layer disappears and returns as one thing. It is
+session state and not a setting in the file: on again at every launch, on
+purpose, because the person who turned it off yesterday knew the interface
+and the person opening the app today may not. The key is still looked up
+with help off, so a misspelt key fails the same way either way; a switch
+that hid a `KeyError` until somebody turned help on would be the D31 bug
+with a delay on it. The accessors find the session through the script run
+context rather than by touching `st.session_state`, which is what keeps the
+help module importable, and its budgets testable, without a browser.
+
+The same section carries the one other preference that was cheap and
+honest to offer: whether the telemetry panel on Results opens expanded.
+Nothing else went in. A preferred device would duplicate the radio on every
+form and go stale against the probe; a refresh interval for the progress view
+is fixed at the fragment's definition and cannot be a session value without
+restructuring the fragment; and a "show the tour again" button would
+duplicate the Tour link beside it.

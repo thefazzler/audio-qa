@@ -101,6 +101,13 @@ tooling recommendation; and the Deploy button, which invites pushing customer
 narration to Streamlit's cloud. These are passed as flags, so nothing on the
 machine is changed and running `streamlit` by hand still behaves normally.
 
+Every field that can be got wrong, every panel heading and every table column
+carries a question mark with a short explanation; the Docs tab carries the
+long ones, and `GLOSSARY.md` there defines the words. **Settings**, at the
+foot of the sidebar, turns the question marks off for this session and back
+on; they are on again at every launch. The same section chooses whether the
+telemetry panel on Results opens expanded.
+
 ## `qa-run` — run the QA pipeline
 
     qa-run <course_dir>
@@ -180,7 +187,7 @@ While it runs you see the topic being transcribed, this machine's measured
 decode rate, and an estimate of the time left computed from that rate rather
 than from any assumption. Each topic's coverage and difference count appear as
 that topic finishes, so early topics can be read while later ones are still
-decoding.
+decoding. Every column header of the topics table explains itself on hover.
 
 Only one run per course at a time. Two would overwrite each other's
 intermediates.
@@ -194,11 +201,13 @@ in that order:
   site below the ASR confidence floor, every identifier whose voicing cannot be
   judged on paper, every watchlist pronunciation candidate, and every
   outline-only topic. Sites that two independent detectors both flagged are
-  marked; those are worth listening to first.
+  marked; those are worth listening to first. Every column header explains
+  itself on hover, and the confidence column's mark says what the number is,
+  where the floor sits, and what a low value means for the row beside it.
 - the packet, ready to download, with the judgment step spelled out. Judgment
   is manual: open a Claude chat, paste `prompts/reconciliation_v2.md`, attach
   the packet. Verdicts and the edit sheet come from there, never from this app.
-- the checks table, one row per topic.
+- the checks table, one row per topic, every column explained on its header.
 - a stats panel, off by default, holding the engine, quantization, device,
   thread count, measured decode rate, per topic decode times, quality signals
   and the measured audio conventions. Telemetry lives here and nowhere else.

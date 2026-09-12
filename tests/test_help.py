@@ -1,10 +1,11 @@
-"""The help and training layer: one source of words, one budget, one tour.
+"""The help and training layer: one source of words, three budgets, one tour.
 
-Three surfaces share one module, so the things worth holding are properties of
-that module rather than of any page: it fits on a page, it covers the fields
-that were chosen to carry a tooltip, its pointers land on real sections, the
-tour appears once and comes back on request, and the Docs tab reads documents
-without ever writing one.
+Four surfaces share one module, so the things worth holding are properties of
+that module rather than of any page: each budget fits on a page, it covers the
+fields that were chosen to carry a tooltip and every column of every table,
+its pointers land on real sections, the tour appears once and comes back on
+request, one checkbox turns every mark off and on again, and the Docs tab
+reads documents without ever writing one.
 
 Rendering is not tested, for the reason test_web_shell.py gives: a Streamlit
 page needs a browser to mean anything, and a test that imports one only proves
@@ -18,14 +19,18 @@ from pathlib import Path
 
 import pytest
 
-from qa.web import docs_view, helptext, tour
+from qa.web import docs_view, helptext, prefs, tour
 from qa.web.helptext import (
+    BUDGET_COLUMNS,
     BUDGET_CONCEPTS,
     BUDGET_FIELDS,
+    COLUMNS,
     CONCEPTS,
     DOCS,
     TOOLTIPS,
     TOUR,
+    column,
+    column_words,
     concept,
     concept_words,
     field_words,
@@ -59,20 +64,34 @@ def test_what_you_read_while_learning_fits_on_one_page():
     )
 
 
-def test_both_budgets_are_one_page():
+def test_what_you_read_at_a_table_fits_on_one_page():
+    """The third budget, added when every column got a mark. See D36."""
+    total = column_words()
+    assert total <= BUDGET_COLUMNS, (
+        f"the column texts come to {total} words, over the "
+        f"{BUDGET_COLUMNS} word budget by {total - BUDGET_COLUMNS}. Cut "
+        "something in qa/web/helptext.py; do not raise the budget."
+    )
+
+
+def test_every_budget_is_one_page():
     assert BUDGET_FIELDS == 500
     assert BUDGET_CONCEPTS == 500
+    assert BUDGET_COLUMNS == 500
 
 
 def test_the_budgets_are_actually_measuring_something():
     """A counter that returns zero would pass a budget test forever."""
     assert field_words() > 300
     assert concept_words() > 300
+    assert column_words() > 300
 
 
-def test_the_two_budgets_count_different_words():
+def test_the_three_budgets_count_different_words():
     """Nothing may be counted twice, or in neither, to duck a cap."""
     assert set(TOOLTIPS) & set(CONCEPTS) == set()
+    assert set(TOOLTIPS) & set(COLUMNS) == set()
+    assert set(CONCEPTS) & set(COLUMNS) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +105,6 @@ REQUIRED = (
     "outline_only",
     "device",
     "reviewed_by",
-    "watchlist_column",
     "listen_list",
     "stats_panel",
 )
@@ -117,13 +135,6 @@ def test_the_device_tooltip_explains_the_greyed_out_state():
     assert "unavailable" in text
     assert "reason" in text
     assert "CPU" in text
-
-
-def test_the_watchlist_tooltip_says_what_a_match_does_not_mean():
-    text = tooltip("watchlist_column")
-    assert "MISHEARD" in text
-    assert "MATCH" in text
-    assert "orthography" in text
 
 
 def test_the_reviewer_tooltip_says_where_the_name_ends_up():
@@ -192,9 +203,174 @@ def test_the_storage_explanations_say_what_survives():
     assert "listen list" in concept("findings_kept")
 
 
+# ---------------------------------------------------------------------------
+# Columns: every header of every table
+# ---------------------------------------------------------------------------
+
+# The tables, and their columns, as the pages draw them. Every column gets a
+# mark, including the ones whose label seems to say everything: the reader
+# who needs "topic" explained is the reader the layer is for.
+TABLES = {
+    "topics": ("topic", "state", "audio", "coverage", "differences", "listen"),
+    "listen": ("topic", "at", "found_by", "what", "confidence", "why"),
+    "checks": (
+        "topic",
+        "from",
+        "script",
+        "state",
+        "coverage",
+        "differences",
+        "listen",
+        "flags",
+        "audio",
+        "suppressed",
+    ),
+}
+
+EVERY_COLUMN = tuple(
+    f"{table}_{name}" for table, names in TABLES.items() for name in names
+)
+
+
+@pytest.mark.parametrize("key", EVERY_COLUMN)
+def test_every_column_of_every_table_is_explained(key):
+    assert column(key).strip()
+
+
+def test_no_column_text_is_written_for_a_column_no_table_has():
+    assert set(COLUMNS) == set(EVERY_COLUMN)
+
+
+def test_an_unknown_column_key_is_a_hard_error():
+    with pytest.raises(KeyError):
+        column("no_such_column")
+
+
+@pytest.mark.parametrize("key", sorted(COLUMNS))
+def test_a_column_text_is_at_most_three_sentences(key):
+    """Two, or three where the column is a set of values to spell out."""
+    text = COLUMNS[key].text
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s]
+    assert len(sentences) <= 3, f"{key} is {len(sentences)} sentences: {text}"
+
+
+def test_the_confidence_column_says_what_the_number_is_and_is_not():
+    """The column a new reviewer asked about, and the one nothing explained.
+
+    It has to say whose certainty it is, where the floor is, what a low value
+    means for the difference beside it, and that it is not pronunciation.
+    """
+    text = column("listen_confidence")
+    assert "transcriber" in text
+    assert "0.6" in text
+    assert "misheard" in text
+    assert "pronunciation" in text
+    assert "GLOSSARY.md" in text
+
+
+def test_the_confidence_floor_in_the_help_is_the_one_the_pipeline_uses():
+    from qa.align import LOW_CONFIDENCE
+
+    assert str(LOW_CONFIDENCE) in column("listen_confidence")
+
+
+def test_the_why_column_says_what_a_match_does_not_mean():
+    text = column("listen_why")
+    assert "MISHEARD" in text
+    assert "MATCH" in text
+    assert "orthography" in text
+
+
+def test_the_coverage_columns_quote_the_floors_the_checks_stage_uses():
+    from qa.checks import COVERAGE_FLOOR, MAPPING_ERROR_FLOOR
+
+    text = column("checks_coverage")
+    assert f"{COVERAGE_FLOOR * 100:.0f}%" in text
+    assert f"{MAPPING_ERROR_FLOOR * 100:.0f}%" in text
+    assert f"{COVERAGE_FLOOR * 100:.0f}%" in column("topics_coverage")
+
+
+def test_the_state_column_names_every_state_a_topic_can_have_during_a_run():
+    text = column("topics_state")
+    for state in ("pending", "transcribed", "cached", "aligned"):
+        assert state in text
+
+
+def test_the_checks_state_column_names_every_word_the_table_can_show():
+    from qa.web.results_view import STATE_ICON
+
+    text = column("checks_state")
+    for shown in STATE_ICON.values():
+        assert shown in text, f"the state column can say {shown!r} and does not explain it"
+
+
 # Learn-more links resolve in tests/test_docs.py, with the other cross
 # reference tests: a dangling pointer is the same fault whether it is in a
 # document or in a tooltip.
+
+
+# ---------------------------------------------------------------------------
+# The switch: one checkbox, every mark
+# ---------------------------------------------------------------------------
+# Session-scoped and on by default, so every launch starts with the marks
+# showing. The accessor finds the session itself; outside Streamlit there is
+# none, and the answer is the default.
+
+@pytest.fixture
+def session(monkeypatch):
+    """A tab of the app, as the help accessors see it."""
+    state: dict = {}
+    prefs.init(state)
+    monkeypatch.setattr(prefs, "_session", lambda: state)
+    return state
+
+
+def test_contextual_help_is_on_by_default():
+    assert prefs.help_enabled({}) is True
+    assert prefs.help_enabled() is True, "outside the app, the default"
+    fresh: dict = {}
+    prefs.init(fresh)
+    assert prefs.help_enabled(fresh) is True
+
+
+def test_turning_help_off_removes_every_mark(session):
+    prefs.set_help(session, False)
+    assert tooltip("device") is None
+    assert concept("stages") is None
+    assert column("listen_confidence") is None
+
+
+def test_turning_help_back_on_brings_every_mark_back(session):
+    prefs.set_help(session, False)
+    prefs.set_help(session, True)
+    assert tooltip("device")
+    assert concept("stages")
+    assert column("listen_confidence")
+
+
+def test_a_wrong_key_fails_the_same_way_with_help_off(session):
+    """Off must not hide a misspelt key until the day somebody turns it on."""
+    prefs.set_help(session, False)
+    with pytest.raises(KeyError):
+        tooltip("no-such-field")
+    with pytest.raises(KeyError):
+        column("no_such_column")
+
+
+def test_the_switch_is_a_session_setting_not_a_machine_one(session, tmp_path, monkeypatch):
+    """Off today must be on tomorrow: the default is per launch."""
+    monkeypatch.setattr("qa.library.config_path", lambda: tmp_path / "config.json")
+    from qa.library import read_settings
+
+    prefs.set_help(session, False)
+    assert read_settings() == {}, "help state must not touch the settings file"
+
+
+def test_the_stats_panel_is_closed_by_default():
+    fresh: dict = {}
+    prefs.init(fresh)
+    assert prefs.stats_open(fresh) is False
+    assert prefs.stats_open({}) is False
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +505,47 @@ def test_the_docs_tab_lists_the_documents_a_new_person_is_sent_to():
         assert expected in keys
     # Where the pronunciation layer's levels are written down: D15.
     assert "DECISIONS.md" in keys
+    # The third way to learn a word, after the hover mark and the tour.
+    assert "GLOSSARY.md" in keys
+
+
+def test_the_glossary_is_alphabetical_and_one_heading_per_term():
+    """A glossary out of order is a list nobody can scan."""
+    text = docs_view.load("GLOSSARY.md")
+    terms = docs_view.sections(text)
+    assert len(terms) >= 40
+    assert terms == sorted(terms, key=str.casefold), "GLOSSARY.md is out of order"
+    assert len(terms) == len(set(terms)), "a term is defined twice"
+
+
+def test_the_glossary_defines_the_words_the_column_help_uses():
+    """Every column text leans on a word; the glossary must carry it."""
+    text = docs_view.load("GLOSSARY.md")
+    terms = {t.casefold() for t in docs_view.sections(text)}
+    for word in (
+        "confidence",
+        "coverage",
+        "difference",
+        "listen item",
+        "flag",
+        "watchlist",
+        "outline only",
+        "voiced symbol",
+        "suppressed duplication",
+        "corroborated",
+    ):
+        assert word in terms, f"GLOSSARY.md has no entry for {word!r}"
+
+
+def test_the_glossary_confidence_entry_says_why_it_matters():
+    """The one term a new reviewer most needs, and the one nothing explained."""
+    text = docs_view.load("GLOSSARY.md")
+    start = text.index("## Confidence")
+    end = text.index("## ", start + 3)
+    entry = text[start:end]
+    assert "Why it matters" in entry
+    assert "0.6" in entry
+    assert "pronunciation" in entry.casefold()
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda d: d.key)
@@ -395,13 +612,13 @@ def test_the_help_module_holds_the_words_and_the_pages_do_not():
             stripped = line.strip()
             if not stripped.startswith("help="):
                 continue
-            assert "tooltip(" in stripped or "concept(" in stripped, (
-                f"qa/web/{name} writes help text inline: {stripped}"
-            )
+            assert (
+                "tooltip(" in stripped or "concept(" in stripped or "column(" in stripped
+            ), f"qa/web/{name} writes help text inline: {stripped}"
 
 
 # Every key a page asks for, read out of the pages themselves.
-KEY_CALL = re.compile('(tooltip|concept)[(]["]([a-z_]+)["][)]')
+KEY_CALL = re.compile('(tooltip|concept|column)[(]["]([a-z_]+)["][)]')
 
 
 def help_keys() -> set[tuple[str, str, str]]:
@@ -426,7 +643,7 @@ def test_every_key_a_page_asks_for_exists():
     Storage tab should have been. Pruning words is meant to be safe, so the
     thing that makes it safe is this test rather than care.
     """
-    known = {"tooltip": set(TOOLTIPS), "concept": set(CONCEPTS)}
+    known = {"tooltip": set(TOOLTIPS), "concept": set(CONCEPTS), "column": set(COLUMNS)}
     missing = [
         f"{page} asks for {accessor}({key!r})"
         for page, accessor, key in sorted(help_keys())
@@ -441,10 +658,10 @@ def test_no_help_text_is_written_and_never_shown():
     Not a failure, but the budget is spent on them, so they are worth seeing.
     """
     asked = {key for _, _, key in help_keys()}
-    unused = sorted((set(TOOLTIPS) | set(CONCEPTS)) - asked)
+    unused = sorted((set(TOOLTIPS) | set(CONCEPTS) | set(COLUMNS)) - asked)
     assert not unused, "written but never shown: " + ", ".join(unused)
 
 
 def test_the_helptext_module_is_the_only_place_the_words_live():
     source = Path(helptext.__file__).read_text(encoding="utf-8")
-    assert "TOOLTIPS" in source and "TOUR" in source
+    assert "TOOLTIPS" in source and "TOUR" in source and "COLUMNS" in source

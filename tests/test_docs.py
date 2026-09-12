@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DECISIONS = ROOT / "DECISIONS.md"
 
 # Documents that are allowed to cite decisions.
-CITING = ("HANDOVER.md", "README.md", "COMMANDS.md")
+CITING = ("HANDOVER.md", "README.md", "COMMANDS.md", "GLOSSARY.md")
 
 # "D21", "**D21**", "D21." but not the "3D" in a product name.
 REFERENCE = re.compile(r"\bD(\d+)\b")
