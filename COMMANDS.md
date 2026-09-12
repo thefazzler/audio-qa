@@ -141,6 +141,15 @@ foot of the sidebar, turns the question marks off for this session and back
 on; they are on again at every launch. The same section chooses whether the
 telemetry panel on Results opens expanded.
 
+Below those, **Appearance**: a theme (Light, Dark, Lights out, and five
+palettes to sit in all day), a text size (Regular, Large, Extra large), a High
+contrast switch that puts black on white or white on black with borders on
+every control and underlined links, and Reduce motion. These are remembered on
+the machine rather than for the session, because somebody who needs large
+text needs it every time, and the launcher applies them before the first
+paint. Every palette is measured against WCAG AA for body text and the high
+contrast overlay against AAA; a test holds the numbers.
+
 ## `qa-run` — run the QA pipeline
 
     qa-run <course_dir>

@@ -1665,3 +1665,46 @@ real NO GPU test that D24's simulation could not be, and the first time the
 setup command, the launchers, the tour, the hover help and the glossary meet
 a person who was not present when they were written. Separating the two would
 cost a second machine and a second afternoon to learn less.
+
+## D38. Appearance is a machine setting, applied through the theme
+
+Asked for: an accessibility mode with larger text and higher contrast, and a
+choice of colour scheme in the way Slack or the Mac offers one. Both live in
+a new `qa/web/look.py`, drawn under Appearance inside the sidebar's Settings
+section. Three decisions in it are worth holding.
+
+**Persisted, unlike the help switch.** D36 made contextual help a session
+setting that returns to on at every launch, because the person opening the
+app today may not be the person who turned it off yesterday. Appearance is
+the opposite case. Somebody who needs large text or high contrast needs it
+every time, and a tool that made them ask again each morning would be
+forgetting the one thing it had been told about them. So these four values
+go in the settings file beside the library location, and the launcher reads
+them into `--theme` flags so the first paint is already right.
+
+**Applied through Streamlit's theme, not through injected CSS.** The obvious
+implementation is a stylesheet that recolours the page, and it does not work
+here: the results tables are a canvas data grid that takes its colours from
+Streamlit's theme object and ignores page CSS, so a stylesheet dark mode
+leaves every table white, which on a Results tab is most of the screen.
+Every colour, the base font size, the border and link settings and the font
+weight are `theme.*` config options instead, and Streamlit hands those to
+everything it draws. Two costs, both accepted. The theme is a property of the
+server, so two tabs of one person's app share it; on a localhost tool with no
+login that is the right answer anyway. And applying a change without a
+restart goes through `streamlit.config.set_option`, an internal API; the
+server rebuilds the theme message from config on every rerun, which is what
+makes a sidebar change take effect on the next one. The launcher flags are
+the supported path and would carry the look on their own after a restart, so
+if the internal call ever stops working the setting degrades to "restart to
+apply" rather than breaking. Motion is the one thing a theme cannot express,
+so Reduce motion is the one stylesheet the module injects, with the focus
+ring the high contrast overlay adds.
+
+**Measured, not eyeballed.** Every palette's body text is asserted at or
+above WCAG AA against its background, sidebar included, and the high contrast
+overlays at AAA. The button colours in the overlay were chosen so white
+button text still reads on them, which is the contrast the default red
+primary fails. Regular text size is Streamlit's own 16 pixels and the default
+look maps every managed key to None, so a machine that has never touched the
+section sends Streamlit nothing and renders exactly as it did before.

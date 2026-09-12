@@ -12,8 +12,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ..library import ENV_VAR, resolve_library
+from ..library import ENV_VAR, read_settings, resolve_library
 from ..util import QAError
+from .look import flags as look_flags
 
 APP = Path(__file__).with_name("app.py")
 
@@ -93,6 +94,9 @@ def main(argv: list[str] | None = None) -> int:
         "--server.port", str(args.port),
         "--server.headless", "true" if args.no_browser else "false",
         *STREAMLIT_QUIET,
+        # The look this machine saved, so the first paint is already right
+        # rather than switching a moment after the page appears.
+        *look_flags(read_settings()),
     ]
     try:
         return subprocess.call(command)

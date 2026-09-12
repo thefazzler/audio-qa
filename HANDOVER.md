@@ -121,7 +121,12 @@ The question marks can be turned off. **Settings**, at the foot of the
 sidebar, has a "Contextual help" checkbox that removes every one of them at
 once; it is on again at the next launch, on purpose, because the person who
 turned it off yesterday knew the interface and the person opening the app
-today may not.
+today may not. The same section's **Appearance** controls, a theme, a text
+size, High contrast and Reduce motion, are the opposite case and are
+remembered on the machine: somebody who needs large text needs it every
+time. They are applied through Streamlit's theme rather than a stylesheet,
+because the results tables ignore page CSS; every palette is measured against
+WCAG AA and the high contrast overlay against AAA. See **D38**.
 
 **Every word of it lives in `qa/web/helptext.py`**, tooltips, column texts,
 tour and panel explanations alike, as dicts of key to text. That is where you

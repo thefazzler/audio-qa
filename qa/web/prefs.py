@@ -6,8 +6,10 @@ back to its default on the next launch. Contextual help in particular defaults
 to on every time: the person who turned it off yesterday knew the interface
 yesterday, and the person opening the app today may not be them.
 
-The one setting that is a fact about the machine, whether the tour has been
-seen, lives in the settings file and is handled in tour.py.
+The settings that are facts about the machine, whether the tour has been
+seen and how the interface should look, live in the settings file and are
+handled in tour.py and look.py. The Appearance controls are drawn inside this
+module's Settings section so a person finds every setting in one place.
 
 Every function takes a plain mapping, as tour.py does, so the rules a test
 cares about hold without a browser: help is on by default, turning it off
@@ -89,3 +91,7 @@ def sidebar(session: MutableMapping) -> None:
         )
         st.checkbox("Open Stats for nerds by default", key=STATS_OPEN)
         st.caption("The telemetry panel on the Results tab, expanded on arrival.")
+
+        from qa.web import look
+
+        look.controls()

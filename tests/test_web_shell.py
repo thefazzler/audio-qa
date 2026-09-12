@@ -54,6 +54,15 @@ def test_the_server_is_reachable_only_from_this_machine():
     assert flags["--server.address"] in {"localhost", "127.0.0.1"}
 
 
+def test_the_launcher_carries_the_saved_look_as_theme_flags():
+    """The first paint has to be right; a switch a moment later is a flash."""
+    from qa.web import launch
+
+    source = Path(launch.__file__).read_text(encoding="utf-8")
+    assert "look_flags(read_settings())" in source
+    assert "*STREAMLIT_QUIET" in source
+
+
 def test_every_flag_has_a_value():
     assert len(STREAMLIT_QUIET) % 2 == 0
     assert all(f.startswith("--") for f in STREAMLIT_QUIET[::2])

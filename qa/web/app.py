@@ -560,7 +560,15 @@ def _show_result(result) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    from qa.web import look
+
+    # The saved look reaches the server's config before this run's session
+    # message is built on the next rerun; the launcher already passed the same
+    # values as flags, so on a normal launch this changes nothing.
+    saved_look = look.current()
+    look.apply(saved_look)
     st.set_page_config(page_title=PAGE_TITLE, page_icon="🎧", layout="wide")
+    look.inject(saved_look)
     _init_state()
 
     st.title("Audio QA")
