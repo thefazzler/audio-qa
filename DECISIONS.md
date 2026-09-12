@@ -1627,3 +1627,41 @@ form and go stale against the probe; a refresh interval for the progress view
 is fixed at the fragment's definition and cannot be a session value without
 restructuring the fragment; and a "show the tour again" button would
 duplicate the Tour link beside it.
+
+## D37. The outstanding confirmations are prepared, not made
+
+Four items had been open across this file and the handover for two weeks,
+all blocked on a person or a machine rather than on code: D5's tail listen,
+D15's three SIEM listens, D24's VERSION MISMATCH row, and the colleague pilot
+that D24 and D30 both defer to. Each now has the human step written down so
+that it is trivial: `LISTENING.md` for the two listens, a runbook section
+under `qa-setup` in `COMMANDS.md` for the desktop, and `PILOT.md` for the
+colleague. The handover's list of unfinished items points at all three, so the
+list and the means to close it live together, and a test holds those pointers.
+
+**The rule these documents obey: they prepare a confirmation and cannot make
+one.** Nothing in them is marked confirmed, no test changed, and no table row
+moved. `LISTENING.md` ends with the exact message to paste back for either
+outcome of either listen, and says what will change when it arrives; the
+runbook says what to bring back before D24's row can flip; the pilot says
+what the observer returns with. A document that closed an item by being
+written would be the tool arguing that a listen had happened.
+
+**Where the listening timestamps came from, honestly.** The golden fixture
+outputs under `tests/spisccc26/` are absent on the machine this was written
+on, so the SIEM site times were read from the working library's own CPU int8
+run of Course 11, where the three low-confidence substitutions at topics 01,
+11 and 13 carry the term on the script side. Their confidences, 0.49, 0.18
+and 0.54, differ from the 0.474, 0.282 and 0.533 D15 recorded, which is the
+between-decode variance D23 measured; the topics and the ranking agree, which
+is what D25 says a person acts on. The ranges carry padding for the same
+reason. The tail listen uses D5's own figures. Per D16, nothing quotes
+narration: the teaser is described by the slide the storyboard puts it on,
+and the paste-back template asks for a description of what was heard rather
+than a spelling.
+
+`PILOT.md` tests two things at once on purpose. A bare machine is both the
+real NO GPU test that D24's simulation could not be, and the first time the
+setup command, the launchers, the tour, the hover help and the glossary meet
+a person who was not present when they were written. Separating the two would
+cost a second machine and a second afternoon to learn less.

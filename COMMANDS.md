@@ -64,6 +64,39 @@ because installed and works are different claims.
 gives the same table on day one and on the day something breaks after a Python
 or driver upgrade.
 
+### Confirming VERSION MISMATCH on the desktop
+
+The one CUDA state D24 has only seen by injection. It needs the owner's
+desktop, the one with a CUDA 11 toolkit on PATH, and takes about ten minutes.
+
+1. On that machine, from the repository folder, run `qa-setup.cmd --check`
+   and keep the whole output. The CUDA row should read, give or take the
+   path:
+
+        CUDA (GPU)  VERSION MISMATCH  CUDA 11 found (on PATH: ...); ctranslate2 cannot use it (optional)
+
+   and the "What to do" block beneath should give `required: CUDA 12 runtime,
+   usable by ctranslate2`, a `fix:` line that is a pip command ending in
+   `cu12` packages, a sentence saying the packages go into this project's
+   virtual environment only, and the words "Do not uninstall the CUDA 11
+   toolkit". If the row says something else, that is the finding: `OK` with
+   "a CUDA 11 toolkit is also present" means the driver supplies what the
+   engine needs and the mismatch state still has not been seen; `NOT USABLE`
+   means the card enumerates but the runtime libraries do not load, and the
+   same pip command is the remediation.
+2. Follow the `fix:` line exactly, inside the project's environment:
+   `.venv\Scripts\python -m pip install -e ".[gpu]"`. Uninstall nothing.
+3. Run `qa-setup.cmd --check` again and keep that output too. The row should
+   now read `OK`, naming the card, with "a CUDA 11 toolkit is also present".
+4. Run one course with Device set to GPU and open its packet. The header
+   should say requested cuda, decoded on cuda; the Stats for nerds panel
+   should show a realtime factor well above the CPU figure.
+
+Bring back the two `--check` outputs verbatim, the driver version from the
+sidebar, and the packet's header line. With those, D24's VERSION MISMATCH row
+changes from "injection only" to "confirmed live", quoting the row as it
+printed. Until then it stays as it is.
+
 ## `qa-web` — the web interface
 
     qa-web                      start the local interface on port 8501

@@ -287,7 +287,11 @@ and write the edit sheet or remediation plan directly, removing the manual
 paste. The interface and constraints are documented in the module. It is not
 built because the packet format should settle across more courses first.
 
-**Two listens are outstanding**, both recorded in `DECISIONS.md`:
+**Two listens are outstanding**, both recorded in `DECISIONS.md`.
+`LISTENING.md` is the one-page script for both: the file, the timestamp range
+to play, what to listen for, what each outcome means, and the exact message to
+paste back so the golden tests can be flipped from "pending confirmation by
+ear" to frozen. The listens are:
 
 - **D5**: whether Course 10 file 01 ends with the Topic 10 teaser sentence. The
   pipeline says it does not, at above 0.99 confidence, and the golden test
@@ -306,12 +310,19 @@ waiting on a person rather than on code, which is why they are here.
 **One CUDA state has never been seen on real hardware, and one was simulated.**
 D24 tracks all four. `VERSION MISMATCH` needs the owner's desktop with its
 stale CUDA 11.0 toolkit: run `qa-setup --check` there, follow the check's own
-remediation, confirm it goes green. `NO GPU` was confirmed on 2026-09-01 by
+remediation, confirm it goes green. The runbook for that, with the report to
+expect at each step and what to bring back, is in `COMMANDS.md` under
+"Confirming VERSION MISMATCH on the desktop". `NO GPU` was confirmed on 2026-09-01 by
 running a full course with `CUDA_VISIBLE_DEVICES=-1`, which proves the probe,
 the selector, the fallback and the packet's account of itself; it does not
 prove a machine that has never had CUDA installed, where the failure can be an
 import error rather than a device count of zero. A bare CPU-only laptop is
-still the real test and is scheduled for the colleague pilot.
+still the real test and is scheduled for the colleague pilot. `PILOT.md` is
+that pilot's checklist: what the colleague does, what the observer watches for
+without helping, and the claims under test, which are the no-GPU probe wording
+on a bare machine, the CPU run completing unaided, and the tour, hover help and
+glossary carrying a first course. It is also the first real new-user test of
+the setup command and the launchers.
 
 **The GPU path is wired and enabled.** The probe is real, the selector works,
 and choosing GPU decodes on GPU: about 4x faster here, at float16. A GPU that

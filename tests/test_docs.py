@@ -20,7 +20,14 @@ ROOT = Path(__file__).resolve().parent.parent
 DECISIONS = ROOT / "DECISIONS.md"
 
 # Documents that are allowed to cite decisions.
-CITING = ("HANDOVER.md", "README.md", "COMMANDS.md", "GLOSSARY.md")
+CITING = (
+    "HANDOVER.md",
+    "README.md",
+    "COMMANDS.md",
+    "GLOSSARY.md",
+    "LISTENING.md",
+    "PILOT.md",
+)
 
 # "D21", "**D21**", "D21." but not the "3D" in a product name.
 REFERENCE = re.compile(r"\bD(\d+)\b")
@@ -124,6 +131,70 @@ def test_a_learn_more_link_reads_as_a_pointer_a_person_can_follow():
         rendered = link.render()
         assert rendered.startswith("Learn more: ")
         assert link.doc in rendered
+
+
+# ---------------------------------------------------------------------------
+# The outstanding items and the means to close them live together
+# ---------------------------------------------------------------------------
+# D37: each item the handover lists as unfinished points at the document that
+# makes its human step trivial. The pointer and the document are checked here
+# because a handover that names a file which is not there is the same fault as
+# a decision reference that resolves to nothing.
+
+PREPARED = {
+    "LISTENING.md": "LISTENING.md",
+    "PILOT.md": "PILOT.md",
+    "the desktop runbook": "Confirming VERSION MISMATCH on the desktop",
+}
+
+
+def unfinished_section() -> str:
+    text = (ROOT / "HANDOVER.md").read_text(encoding="utf-8")
+    start = text.index("## What is unfinished")
+    end = text.index("## ", start + 3)
+    return text[start:end]
+
+
+@pytest.mark.parametrize("name", sorted(PREPARED), ids=lambda n: n)
+def test_the_handover_points_at_every_prepared_confirmation(name):
+    assert PREPARED[name] in unfinished_section(), (
+        f"HANDOVER.md's unfinished list no longer points at {name}"
+    )
+
+
+@pytest.mark.parametrize("name", ["LISTENING.md", "PILOT.md"])
+def test_a_prepared_confirmation_is_really_there(name):
+    assert (ROOT / name).is_file(), f"{name} is named in HANDOVER.md but missing"
+
+
+def test_the_desktop_runbook_is_where_the_handover_says():
+    text = (ROOT / "COMMANDS.md").read_text(encoding="utf-8")
+    assert "### Confirming VERSION MISMATCH on the desktop" in text
+    assert "qa-setup.cmd --check" in text
+    assert "Bring back" in text
+
+
+def test_the_listening_page_ends_with_the_message_to_paste_back():
+    """Both outcomes of both listens must be answerable by one paste."""
+    text = (ROOT / "LISTENING.md").read_text(encoding="utf-8")
+    block = text[text.index("## The message to paste back"):]
+    for expected in ("ABSENT", "PRESENT", "ACCEPTABLE", "WRONG"):
+        assert expected in block, f"the paste-back template has no {expected} outcome"
+    assert "tests/test_course10.py" in block
+    assert "tests/test_course11.py" in block
+
+
+def test_the_prepared_documents_confirm_nothing():
+    """They prepare a confirmation; only the results close one. D37."""
+    for name in ("LISTENING.md", "PILOT.md"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "confirmed by ear on" not in text.lower()
+        assert "confirmed live" not in text.lower()
+    tests = (ROOT / "tests" / "test_course10.py").read_text(encoding="utf-8")
+    tests += (ROOT / "tests" / "test_course11.py").read_text(encoding="utf-8")
+    assert tests.count("pending confirmation by ear") == 2, (
+        "a golden value was flipped without the listen having happened"
+    )
 
 
 def test_the_standing_rule_is_recorded():
