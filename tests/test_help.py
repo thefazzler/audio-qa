@@ -281,6 +281,25 @@ def test_the_why_column_says_what_a_match_does_not_mean():
     assert "orthography" in text
 
 
+# The columns a new reader hovers first and understands least. Each mark
+# points at the glossary, so the glossary is found from the table rather
+# than by wandering into the Docs tab. Few on purpose, per D30: the entry
+# behind each of these says something the column text does not.
+GLOSSARY_POINTERS = ("listen_confidence", "listen_why", "checks_coverage", "checks_flags")
+
+
+@pytest.mark.parametrize("key", GLOSSARY_POINTERS)
+def test_the_glossary_is_reachable_from_the_columns_people_ask_about(key):
+    link = COLUMNS[key].link
+    assert link is not None and link.doc == "GLOSSARY.md", key
+
+
+def test_glossary_pointers_from_columns_stay_few():
+    """A pointer that leads to a restatement teaches people to stop clicking."""
+    pointed = [k for k, tip in COLUMNS.items() if tip.link and tip.link.doc == "GLOSSARY.md"]
+    assert set(pointed) == set(GLOSSARY_POINTERS)
+
+
 def test_the_coverage_columns_quote_the_floors_the_checks_stage_uses():
     from qa.checks import COVERAGE_FLOOR, MAPPING_ERROR_FLOOR
 

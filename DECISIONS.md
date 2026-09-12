@@ -1592,6 +1592,22 @@ paragraph and the glossary is the right one; the column's mark links to it.
 Tests hold the file alphabetical, hold every word the column help leans on
 to an entry, and resolve the link like every other learn-more pointer.
 
+The glossary had a discoverability gap on the day it landed: only the
+confidence mark pointed at it, so a reader who hovered any other column and
+wanted more was never told it existed unless they wandered into the Docs
+tab. Closed with pointers on three more marks and nothing else, weighed
+against naming the glossary in the tour's last step (reaches only people
+who take the tour, and dilutes the one idea that step exists to hold) and
+relabelling the Docs picker (helps only people already there). Coverage
+points at its entry because the entry says why the 85% floor is a mapping
+guard rather than a narration finding; flags points at its entry because
+the entry carries every label and band, which let the column text shrink;
+the why column's pointer moved from the README's watchlist section, which
+is about seeding one, to the glossary entry that defines all three
+statuses, including the one the column text does not mention. Four column
+marks now lead to the glossary and a test holds that set, so the number
+cannot drift upward one helpful link at a time.
+
 **A switch, in a Settings section at the foot of the sidebar.** One checkbox,
 "Contextual help", makes every accessor answer None, which Streamlit draws as
 no mark, so the whole layer disappears and returns as one thing. It is

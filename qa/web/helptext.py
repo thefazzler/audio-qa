@@ -348,7 +348,7 @@ COLUMNS: dict[str, Tip] = {
         "The detector's reason. MISHEARD means the ASR wrote something other "
         "than the expected spelling: a reason to listen, not a defect. A "
         "MATCH is orthography, not proof of correct pronunciation.",
-        Link("README.md", "Pronunciation watchlist"),
+        Link("GLOSSARY.md", "MATCH, LOW CONFIDENCE, MISHEARD"),
     ),
     # Results: checks
     "checks_topic": Tip("One row per topic, in delivery order."),
@@ -370,7 +370,8 @@ COLUMNS: dict[str, Tip] = {
     "checks_coverage": Tip(
         "Share of script words the transcript matched. Below 97% is LOW "
         "COVERAGE; below 85% a slide mapping error is likelier. n/a without "
-        "a verbatim script."
+        "a verbatim script.",
+        Link("GLOSSARY.md", "Coverage"),
     ),
     "checks_differences": Tip(
         "Word-level disagreements, counted: measurements, not defects. not "
@@ -378,10 +379,11 @@ COLUMNS: dict[str, Tip] = {
     ),
     "checks_listen": Tip("Places in this topic on the listen list above."),
     "checks_flags": Tip(
-        "Problems the checks stage raised: pace far from the script's, low "
-        "coverage, a probable mapping error, an unmatched last sentence, long "
-        "trailing silence, a decoder that stopped early, an audio artifact. "
-        "Read the flag first; a mapping error makes the differences noise."
+        "Problems the checks stage raised: pace, low coverage, a probable "
+        "mapping error, an unmatched last sentence, trailing silence, an early "
+        "decoder stop, an audio artifact. Read the flag first; a mapping error "
+        "makes the differences noise.",
+        Link("GLOSSARY.md", "Flag"),
     ),
     "checks_audio": Tip(
         "What the artifacts stage heard: clipping, silence inside the "
